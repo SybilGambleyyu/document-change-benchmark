@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 23,
-        "fact_count": 23,
+        "case_count": 24,
+        "fact_count": 24,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 23, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 24, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 44
-    assert loaded_package_count == 46
+    assert loaded_document_count == 46
+    assert loaded_package_count == 48
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -122,6 +122,106 @@ def test_dde_field_pair_has_a_fixed_shape_and_one_source_argument_boundary() -> 
     assert "approved-source.xlsx" in fields_before[0].get(instruction_attribute, "")
     assert "candidate-source.xlsx" in fields_after[0].get(instruction_attribute, "")
     assert list(fields_before[0].itertext()) == list(fields_after[0].itertext())
+
+
+def test_complex_include_text_pair_has_fragmented_instruction_and_one_target_boundary() -> None:
+    """A complex field must reconstruct its source across preserved-whitespace runs."""
+
+    case = FIXTURES / "external.complex_include_text_field_target_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+
+    assert (
+        candidate_document.replace(
+            b"candidate.example.invalid/dcab-source.docx",
+            b"approved.example.invalid/dcab-source.docx",
+            1,
+        )
+        == baseline_document
+    )
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xml_namespace = "http://www.w3.org/XML/1998/namespace"
+    run_tag = f"{{{word_namespace}}}r"
+    text_tag = f"{{{word_namespace}}}t"
+    field_character_tag = f"{{{word_namespace}}}fldChar"
+    instruction_tag = f"{{{word_namespace}}}instrText"
+    simple_field_tag = f"{{{word_namespace}}}fldSimple"
+    field_type_attribute = f"{{{word_namespace}}}fldCharType"
+    xml_space_attribute = f"{{{xml_namespace}}}space"
+    baseline_root = ET.fromstring(baseline_document)
+    candidate_root = ET.fromstring(candidate_document)
+
+    assert not list(baseline_root.iter(simple_field_tag))
+    assert not list(candidate_root.iter(simple_field_tag))
+    expected_chunks = {
+        "baseline": [
+            " INCLUDE",
+            'TEXT "https://',
+            'approved.example.invalid/dcab-source.docx" ',
+        ],
+        "candidate": [
+            " INCLUDE",
+            'TEXT "https://',
+            'candidate.example.invalid/dcab-source.docx" ',
+        ],
+    }
+    for side, root in (("baseline", baseline_root), ("candidate", candidate_root)):
+        field_characters = list(root.iter(field_character_tag))
+        instructions = list(root.iter(instruction_tag))
+        assert [character.attrib for character in field_characters] == [
+            {field_type_attribute: "begin"},
+            {field_type_attribute: "separate"},
+            {field_type_attribute: "end"},
+        ]
+        assert [instruction.attrib for instruction in instructions] == [
+            {xml_space_attribute: "preserve"},
+            {xml_space_attribute: "preserve"},
+            {xml_space_attribute: "preserve"},
+        ]
+        chunks = [instruction.text for instruction in instructions]
+        assert chunks == expected_chunks[side]
+        assert "".join(chunks) == (
+            f' INCLUDETEXT "https://{side}.example.invalid/dcab-source.docx" '
+            if side == "candidate"
+            else ' INCLUDETEXT "https://approved.example.invalid/dcab-source.docx" '
+        )
+        assert all("INCLUDETEXT" not in chunk for chunk in chunks)
+
+        paragraph = next(iter(root.iter(f"{{{word_namespace}}}p")))
+        children = list(paragraph)
+        begin_index = next(
+            index
+            for index, child in enumerate(children)
+            if child.tag == run_tag and len(child) == 1 and child[0] is field_characters[0]
+        )
+        field_runs = children[begin_index : begin_index + 7]
+        assert [run.tag for run in field_runs] == [run_tag] * 7
+        assert [run[0].tag for run in field_runs] == [
+            field_character_tag,
+            instruction_tag,
+            instruction_tag,
+            instruction_tag,
+            field_character_tag,
+            text_tag,
+            field_character_tag,
+        ]
+        assert field_runs[5][0].text == "DCAB include-text field result"
+
+    assert [node.text for node in baseline_root.iter(text_tag)] == [
+        node.text for node in candidate_root.iter(text_tag)
+    ]
 
 
 def test_document_variable_pair_has_a_fixed_field_and_one_value_boundary() -> None:

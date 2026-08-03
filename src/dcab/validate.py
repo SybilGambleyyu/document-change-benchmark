@@ -33,6 +33,7 @@ from .build import (
     _DRAWING_NS,
     _HYPERLINK_RELATIONSHIP,
     _IMAGE_RELATIONSHIP,
+    _INCLUDE_TEXT_FIELD_RESULT,
     _MAIL_MERGE_SOURCE_RELATIONSHIP,
     _MODERN_COMMENT_ANCHOR_TEXT,
     _MODERN_COMMENT_AUTHOR,
@@ -83,11 +84,14 @@ from .build import (
     FIXTURE_SCHEMA_VERSION,
     CaseSpec,
     DocumentVariant,
+    _complex_include_text_instruction_chunks,
     _dde_field_instruction,
     _document_variable_field_instruction,
     case_files,
     truth_manifest,
 )
+
+_XML_NS = "http://www.w3.org/XML/1998/namespace"
 
 
 class FixtureValidationError(ValueError):
@@ -469,6 +473,8 @@ def _validate_document_xml(
         if instruction != expected_instruction:
             _invalid(spec, f"{side} field instruction is invalid")
 
+    _validate_complex_include_text_field(root, variant, spec, side)
+
     permission_starts = list(root.iter(_word_tag("permStart")))
     permission_ends = list(root.iter(_word_tag("permEnd")))
     expected_permission_range_count = int(variant.permission_range_editor is not None)
@@ -610,6 +616,57 @@ def _validate_document_xml(
         _invalid(spec, f"{side} embedded OLE marker is invalid")
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
+
+
+def _validate_complex_include_text_field(
+    root: ET.Element, variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate one complete, deliberately fragmented complex INCLUDETEXT field."""
+
+    field_characters = list(root.iter(_word_tag("fldChar")))
+    instruction_texts = list(root.iter(_word_tag("instrText")))
+    target = variant.complex_include_text_target
+    if target is None:
+        if field_characters or instruction_texts:
+            _invalid(spec, f"{side} unexpected complex-field markup is present")
+        return
+    if len(field_characters) != 3 or len(instruction_texts) != 3:
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
+
+    field_runs = [
+        run
+        for run in root.iter(_word_tag("r"))
+        if any(character in run for character in field_characters)
+        or any(instruction in run for instruction in instruction_texts)
+    ]
+    if len(field_runs) != 6:
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
+    field_paragraphs = [
+        paragraph
+        for paragraph in root.iter(_word_tag("p"))
+        if all(run in paragraph for run in field_runs)
+    ]
+    if len(field_paragraphs) != 1:
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
+    paragraph_children = list(field_paragraphs[0])
+    begin_index = paragraph_children.index(field_runs[0])
+    if begin_index + 6 >= len(paragraph_children):
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
+    field_sequence = paragraph_children[begin_index : begin_index + 7]
+    instruction_chunks = _complex_include_text_instruction_chunks(target)
+    if not (
+        _is_field_character_run(field_sequence[0], "begin")
+        and all(
+            _is_instruction_text_run(run, chunk)
+            for run, chunk in zip(field_sequence[1:4], instruction_chunks, strict=True)
+        )
+        and _is_field_character_run(field_sequence[4], "separate")
+        and _is_comment_text_run(field_sequence[5], _INCLUDE_TEXT_FIELD_RESULT)
+        and _is_field_character_run(field_sequence[6], "end")
+    ):
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
+    if tuple(field_runs) != tuple(field_sequence[index] for index in (0, 1, 2, 3, 4, 6)):
+        _invalid(spec, f"{side} complex INCLUDETEXT field markup is invalid")
 
 
 def _validate_modern_comment(
@@ -1072,6 +1129,40 @@ def _is_comment_text_run(run: ET.Element, text: str) -> bool:
         and len(run) == 1
         and run[0].tag == _word_tag("t")
         and not run[0].attrib
+        and run[0].text == text
+        and not list(run[0])
+        and not (run[0].tail or "").strip()
+        and not (run.text or "").strip()
+        and not (run.tail or "").strip()
+    )
+
+
+def _is_field_character_run(run: ET.Element, field_type: str) -> bool:
+    """Return whether ``run`` has one unadorned complex-field marker."""
+
+    return (
+        run.tag == _word_tag("r")
+        and not run.attrib
+        and len(run) == 1
+        and _is_empty_element(
+            run[0],
+            _word_tag("fldChar"),
+            {_word_tag("fldCharType"): field_type},
+        )
+        and not (run.text or "").strip()
+        and not (run.tail or "").strip()
+    )
+
+
+def _is_instruction_text_run(run: ET.Element, text: str) -> bool:
+    """Return whether ``run`` has one preserved-whitespace field-code fragment."""
+
+    return (
+        run.tag == _word_tag("r")
+        and not run.attrib
+        and len(run) == 1
+        and run[0].tag == _word_tag("instrText")
+        and run[0].attrib == {f"{{{_XML_NS}}}space": "preserve"}
         and run[0].text == text
         and not list(run[0])
         and not (run[0].tail or "").strip()

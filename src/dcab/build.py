@@ -177,6 +177,7 @@ class DocumentVariant:
     vml_shape_hyperlink_target: str | None = None
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
+    complex_include_text_target: str | None = None
     dde_source_file: str | None = None
     document_variable_value: str | None = None
     permission_range_editor: str | None = None
@@ -337,6 +338,25 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="block",
         baseline=DocumentVariant(include_text_target=_INCLUDE_TEXT_APPROVED),
         candidate=DocumentVariant(include_text_target=_INCLUDE_TEXT_CANDIDATE),
+        changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
+        case_id="external.complex_include_text_field_target_retargeted",
+        title="Fragmented complex INCLUDETEXT source retargeted",
+        description=(
+            "A complete complex INCLUDETEXT field retains its begin/separate/end markers, "
+            "fragmented instruction shape, and stored result text while its private external "
+            "source instruction changes."
+        ),
+        fact={
+            "field_encoding": "complex_fragmented",
+            "field_kind": "include_text",
+            "kind": "external_field_source_changed",
+            "source": "word_field",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(complex_include_text_target=_INCLUDE_TEXT_APPROVED),
+        candidate=DocumentVariant(complex_include_text_target=_INCLUDE_TEXT_CANDIDATE),
         changed_members=("word/document.xml",),
     ),
     CaseSpec(
@@ -731,6 +751,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("HYPERLINK target cannot be empty")
     if variant.include_text_target is not None and not variant.include_text_target:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
+    if variant.complex_include_text_target is not None and not variant.complex_include_text_target:
+        raise FixtureBuildError("complex INCLUDETEXT target cannot be empty")
+    if variant.include_text_target is not None and variant.complex_include_text_target is not None:
+        raise FixtureBuildError("simple and complex INCLUDETEXT targets are mutually exclusive")
     if variant.dde_source_file is not None and not variant.dde_source_file:
         raise FixtureBuildError("DDE source file cannot be empty")
     if variant.document_variable_value is not None and not variant.document_variable_value:
@@ -990,11 +1014,14 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.hyperlink_field_target is not None
         else _run(_HYPERLINK_FIELD_RESULT)
     )
-    include_field_markup = (
-        _simple_field(f' INCLUDETEXT "{variant.include_text_target}" ', _INCLUDE_TEXT_FIELD_RESULT)
-        if variant.include_text_target is not None
-        else _run(_INCLUDE_TEXT_FIELD_RESULT)
-    )
+    if variant.include_text_target is not None:
+        include_field_markup = _simple_field(
+            f' INCLUDETEXT "{variant.include_text_target}" ', _INCLUDE_TEXT_FIELD_RESULT
+        )
+    elif variant.complex_include_text_target is not None:
+        include_field_markup = _complex_include_text_field(variant.complex_include_text_target)
+    else:
+        include_field_markup = _run(_INCLUDE_TEXT_FIELD_RESULT)
     dde_field_markup = (
         _simple_field(_dde_field_instruction(variant.dde_source_file), _DDE_FIELD_RESULT)
         if variant.dde_source_file is not None
@@ -1059,6 +1086,32 @@ def _simple_field(instruction: str, result: str) -> str:
     return (
         f'<w:fldSimple w:instr="{html.escape(instruction, quote=True)}">'
         f"{_run(result)}</w:fldSimple>"
+    )
+
+
+def _complex_include_text_field(target: str) -> str:
+    """Return one complete, fragmented complex INCLUDETEXT field."""
+
+    instruction_markup = "".join(
+        f'<w:r><w:instrText xml:space="preserve">{html.escape(chunk)}</w:instrText></w:r>'
+        for chunk in _complex_include_text_instruction_chunks(target)
+    )
+    return (
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        f"{instruction_markup}"
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        f"{_run(_INCLUDE_TEXT_FIELD_RESULT)}"
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    )
+
+
+def _complex_include_text_instruction_chunks(target: str) -> tuple[str, str, str]:
+    """Return the fixed three-run instruction shape for a complex INCLUDETEXT field."""
+
+    return (
+        " INCLUDE",
+        f'TEXT "{target[:8]}',
+        f'{target[8:]}" ',
     )
 
 
