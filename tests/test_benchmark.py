@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 27,
-        "fact_count": 27,
+        "case_count": 28,
+        "fact_count": 28,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 27, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 28, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 52
-    assert loaded_package_count == 54
+    assert loaded_document_count == 54
+    assert loaded_package_count == 56
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -94,6 +94,112 @@ def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> 
     assert baseline_relationship.get("TargetMode") == "External"
     assert candidate_relationship.get("TargetMode") == "External"
     assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
+
+
+def test_mail_merge_recipient_active_pair_has_a_fixed_topology_and_one_state_boundary() -> None:
+    """A fixed recipient record changes only its stored merge-inclusion state."""
+
+    case = FIXTURES / "review.mail_merge_recipient_active_state_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/recipientData.xml"
+        ]
+        baseline_content_types = baseline.read("[Content_Types].xml")
+        candidate_content_types = candidate.read("[Content_Types].xml")
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_settings = baseline.read("word/settings.xml")
+        candidate_settings = candidate.read("word/settings.xml")
+        baseline_relationships = baseline.read("word/_rels/settings.xml.rels")
+        candidate_relationships = candidate.read("word/_rels/settings.xml.rels")
+        baseline_recipient_data = baseline.read("word/recipientData.xml")
+        candidate_recipient_data = candidate.read("word/recipientData.xml")
+
+    assert baseline_content_types == candidate_content_types
+    assert baseline_document == candidate_document
+    assert baseline_settings == candidate_settings
+    assert baseline_relationships == candidate_relationships
+    assert candidate_recipient_data.replace(b'w:val="true"', b'w:val="false"', 1) == (
+        baseline_recipient_data
+    )
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    settings = ET.fromstring(baseline_settings)
+    mail_merges = list(settings.iter(f"{{{word_namespace}}}mailMerge"))
+    assert len(mail_merges) == 1
+    mail_merge = mail_merges[0]
+    assert [child.tag for child in mail_merge] == [
+        f"{{{word_namespace}}}mainDocumentType",
+        f"{{{word_namespace}}}dataType",
+        f"{{{word_namespace}}}dataSource",
+        f"{{{word_namespace}}}odso",
+    ]
+    assert mail_merge[0].attrib == {f"{{{word_namespace}}}val": "formLetters"}
+    assert mail_merge[1].attrib == {f"{{{word_namespace}}}val": "text"}
+    assert mail_merge[2].attrib == {f"{{{relationship_namespace}}}id": "rIdMailMergeSource"}
+    assert mail_merge[3].attrib == {}
+    assert len(mail_merge[3]) == 1
+    assert mail_merge[3][0].tag == f"{{{word_namespace}}}recipientData"
+    assert mail_merge[3][0].attrib == {
+        f"{{{relationship_namespace}}}id": "rIdMailMergeRecipientData"
+    }
+
+    relationships = ET.fromstring(baseline_relationships)
+    relationship_by_id = {relationship.get("Id"): relationship for relationship in relationships}
+    assert relationship_by_id["rIdMailMergeSource"].attrib == {
+        "Id": "rIdMailMergeSource",
+        "Type": f"{relationship_namespace}/mailMergeSource",
+        "Target": "https://approved.example.invalid/dcab-mail-merge.csv",
+        "TargetMode": "External",
+    }
+    assert relationship_by_id["rIdMailMergeRecipientData"].attrib == {
+        "Id": "rIdMailMergeRecipientData",
+        "Type": f"{relationship_namespace}/recipientData",
+        "Target": "recipientData.xml",
+    }
+    assert relationships.tag == f"{{{package_relationship_namespace}}}Relationships"
+
+    content_types = ET.fromstring(baseline_content_types)
+    overrides = {
+        child.get("PartName"): child.get("ContentType")
+        for child in content_types
+        if child.tag == f"{{{content_types_namespace}}}Override"
+    }
+    assert overrides["/word/recipientData.xml"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.mailMergeRecipientData+xml"
+    )
+
+    baseline_recipients = ET.fromstring(baseline_recipient_data)
+    candidate_recipients = ET.fromstring(candidate_recipient_data)
+    for recipients, active_value in (
+        (baseline_recipients, "false"),
+        (candidate_recipients, "true"),
+    ):
+        assert recipients.tag == f"{{{word_namespace}}}recipients"
+        assert recipients.attrib == {}
+        assert len(recipients) == 1
+        recipient = recipients[0]
+        assert recipient.tag == f"{{{word_namespace}}}recipientData"
+        assert recipient.attrib == {}
+        assert [child.tag for child in recipient] == [
+            f"{{{word_namespace}}}active",
+            f"{{{word_namespace}}}hash",
+        ]
+        assert recipient[0].attrib == {f"{{{word_namespace}}}val": active_value}
+        assert recipient[1].attrib == {f"{{{word_namespace}}}val": "148730921"}
+
+    text_tag = f"{{{word_namespace}}}t"
+    assert [node.text for node in ET.fromstring(baseline_document).iter(text_tag)] == [
+        node.text for node in ET.fromstring(candidate_document).iter(text_tag)
+    ]
 
 
 def test_frameset_source_pair_has_a_fixed_topology_and_one_target_boundary() -> None:
@@ -908,6 +1014,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdHyperlink",
         "rIdAttachedTemplate",
         "rIdMailMergeSource",
+        "rIdMailMergeRecipientData",
         "rIdSubDocument",
         "rIdWebSettings",
         "rIdFrameSource",
@@ -921,6 +1028,8 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "oleObject1.bin",
         "activeX1.xml",
         "activeX1.bin",
+        "recipientData.xml",
+        "148730921",
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",

@@ -336,6 +336,32 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             and _same_count(report, "mail_merge", "mail_merge_recipient_data_part_count", 0)
         )
         return observed, _evidence("external_relationships_changed", "mail_merge_inventory_changed")
+    if kind == "mail_merge_recipient_active_state_changed":
+        observed = _has_changes(report, "mail_merge_inventory_changed") and all(
+            (
+                _same_count(report, "mail_merge", "mail_merge_configuration_count", 1),
+                _same_count(
+                    report,
+                    "mail_merge",
+                    "mail_merge_data_source_relationship_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "mail_merge",
+                    "mail_merge_header_source_relationship_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "mail_merge",
+                    "mail_merge_recipient_data_relationship_count",
+                    1,
+                ),
+                _same_count(report, "mail_merge", "mail_merge_recipient_data_part_count", 1),
+            )
+        )
+        return observed, _evidence("mail_merge_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

@@ -49,6 +49,9 @@ from .build import (
     _LINKED_OLE_PROG_ID,
     _LINKED_OLE_SHAPE_ID,
     _LINKED_OLE_UPDATE_MODE,
+    _MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE,
+    _MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP,
+    _MAIL_MERGE_RECIPIENT_HASH,
     _MAIL_MERGE_SOURCE_RELATIONSHIP,
     _MODERN_COMMENT_ANCHOR_TEXT,
     _MODERN_COMMENT_AUTHOR,
@@ -212,6 +215,8 @@ def _validate_package(
             "word/activeX/_rels/activeX1.xml.rels",
             "word/activeX/activeX1.bin",
         }
+    if variant.mail_merge_recipient_active is not None:
+        expected_members.add("word/recipientData.xml")
     if variant.modern_comment_done is not None:
         expected_members |= {"word/comments.xml", "word/commentsExtended.xml"}
     if variant.alternative_format_import_payload is not None:
@@ -227,6 +232,7 @@ def _validate_package(
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
+        or variant.mail_merge_recipient_active is not None
     ):
         expected_members.add("word/_rels/settings.xml.rels")
     if set(members) != expected_members:
@@ -237,6 +243,7 @@ def _validate_package(
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
     _validate_active_x_control(members, variant, spec, side)
+    _validate_mail_merge_recipient_data(members, variant, spec, side)
     _validate_modern_comment(members, variant, spec, side)
     _validate_taskpane_web_extension(members, variant, spec, side)
     _validate_alternative_format_import(members, variant, spec, side)
@@ -294,6 +301,8 @@ def _validate_content_types(
     }
     if variant.custom_xml_payload is not None:
         expected["/customXml/itemProps1.xml"] = _CUSTOM_XML_PROPERTIES_CONTENT_TYPE
+    if variant.mail_merge_recipient_active is not None:
+        expected["/word/recipientData.xml"] = _MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE
     if variant.alternative_format_import_payload is not None:
         expected["/word/afchunk1.html"] = _ALT_CHUNK_CONTENT_TYPE
     if variant.macro_payload is not None:
@@ -814,6 +823,48 @@ def _validate_active_x_control(
         _invalid(spec, f"{side} ActiveX persistence relationship is invalid")
 
 
+def _validate_mail_merge_recipient_data(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate one fixed internal recipient-selection record without reading a source."""
+
+    if variant.mail_merge_recipient_active is None:
+        return
+    root = _parse_xml(members["word/recipientData.xml"], spec)
+    expected_active_value = "true" if variant.mail_merge_recipient_active else "false"
+    if (
+        root.tag != _word_tag("recipients")
+        or root.attrib
+        or len(root) != 1
+        or (root.text or "").strip()
+        or (root.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} mail-merge recipient-data root is invalid")
+    recipient = root[0]
+    if (
+        recipient.tag != _word_tag("recipientData")
+        or recipient.attrib
+        or len(recipient) != 2
+        or (recipient.text or "").strip()
+        or (recipient.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} mail-merge recipient record is invalid")
+    active, record_hash = recipient
+    if not (
+        _is_empty_element(
+            active,
+            _word_tag("active"),
+            {_word_tag("val"): expected_active_value},
+        )
+        and _is_empty_element(
+            record_hash,
+            _word_tag("hash"),
+            {_word_tag("val"): _MAIL_MERGE_RECIPIENT_HASH},
+        )
+    ):
+        _invalid(spec, f"{side} mail-merge recipient-selection state is invalid")
+
+
 def _validate_complex_include_text_field(
     root: ET.Element, variant: DocumentVariant, spec: CaseSpec, side: str
 ) -> None:
@@ -1104,18 +1155,37 @@ def _validate_settings(
             _invalid(spec, f"{side} document-variable setting is invalid")
     if mail_merges:
         mail_merge = mail_merges[0]
-        main_document_types = [
-            element for element in mail_merge if element.tag == _word_tag("mainDocumentType")
+        expected_children = [
+            _word_tag("mainDocumentType"),
+            _word_tag("dataType"),
+            _word_tag("dataSource"),
         ]
-        data_sources = [element for element in mail_merge if element.tag == _word_tag("dataSource")]
+        if variant.mail_merge_recipient_active is not None:
+            expected_children.append(_word_tag("odso"))
         if (
-            len(mail_merge) != 2
-            or len(main_document_types) != 1
-            or main_document_types[0].get(_word_tag("val")) != "formLetters"
-            or len(data_sources) != 1
-            or data_sources[0].get(f"{{{_REL_NS}}}id") != "rIdMailMergeSource"
+            mail_merge.attrib
+            or [element.tag for element in mail_merge] != expected_children
+            or (mail_merge.text or "").strip()
+            or (mail_merge.tail or "").strip()
+            or mail_merge[0].attrib != {_word_tag("val"): "formLetters"}
+            or mail_merge[1].attrib != {_word_tag("val"): "text"}
+            or mail_merge[2].attrib != {f"{{{_REL_NS}}}id": "rIdMailMergeSource"}
         ):
             _invalid(spec, f"{side} mail-merge data-source anchor is invalid")
+        if variant.mail_merge_recipient_active is not None:
+            odso = mail_merge[3]
+            if (
+                odso.attrib
+                or len(odso) != 1
+                or (odso.text or "").strip()
+                or (odso.tail or "").strip()
+                or odso[0].tag != _word_tag("recipientData")
+                or odso[0].attrib != {f"{{{_REL_NS}}}id": "rIdMailMergeRecipientData"}
+                or list(odso[0])
+                or (odso[0].text or "").strip()
+                or (odso[0].tail or "").strip()
+            ):
+                _invalid(spec, f"{side} mail-merge recipient-data anchor is invalid")
     if protections:
         protection = protections[0]
         if (
@@ -1133,7 +1203,11 @@ def _validate_settings_relationships(
     members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
 ) -> None:
     has_relationships = "word/_rels/settings.xml.rels" in members
-    if variant.attached_template_target is None and variant.mail_merge_data_source_target is None:
+    if (
+        variant.attached_template_target is None
+        and variant.mail_merge_data_source_target is None
+        and variant.mail_merge_recipient_active is None
+    ):
         if has_relationships:
             _invalid(spec, f"{side} unexpected settings relationships are present")
         return
@@ -1152,6 +1226,12 @@ def _validate_settings_relationships(
             _MAIL_MERGE_SOURCE_RELATIONSHIP,
             variant.mail_merge_data_source_target,
             "external",
+        )
+    if variant.mail_merge_recipient_active is not None:
+        expected["rIdMailMergeRecipientData"] = (
+            _MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP,
+            "recipientData.xml",
+            "internal",
         )
     if relationships != expected:
         _invalid(spec, f"{side} settings relationships are invalid")

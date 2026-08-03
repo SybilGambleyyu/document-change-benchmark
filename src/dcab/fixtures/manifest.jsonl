@@ -10,6 +10,7 @@
 {"id": "binding.document_variable_value_changed", "schema_version": 1, "truth": "binding.document_variable_value_changed/truth.json"}
 {"id": "external.attached_template_target_retargeted", "schema_version": 1, "truth": "external.attached_template_target_retargeted/truth.json"}
 {"id": "external.mail_merge_data_source_target_retargeted", "schema_version": 1, "truth": "external.mail_merge_data_source_target_retargeted/truth.json"}
+{"id": "review.mail_merge_recipient_active_state_changed", "schema_version": 1, "truth": "review.mail_merge_recipient_active_state_changed/truth.json"}
 {"id": "external.subdocument_target_retargeted", "schema_version": 1, "truth": "external.subdocument_target_retargeted/truth.json"}
 {"id": "external.frameset_source_target_retargeted", "schema_version": 1, "truth": "external.frameset_source_target_retargeted/truth.json"}
 {"id": "external.vml_linked_ole_object_target_retargeted", "schema_version": 1, "truth": "external.vml_linked_ole_object_target_retargeted/truth.json"}

@@ -62,6 +62,9 @@ _COMMENTS_EXTENDED_CONTENT_TYPE = (
 _CUSTOM_XML_PROPERTIES_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.customXmlProperties+xml"
 )
+_MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.mailMergeRecipientData+xml"
+)
 _ALT_CHUNK_CONTENT_TYPE = "text/html"
 _VBA_PROJECT_CONTENT_TYPE = "application/vnd.ms-office.vbaProject"
 _OLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.oleObject"
@@ -83,6 +86,8 @@ _COMMENTS_EXTENDED_RELATIONSHIP = (
 )
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
 _MAIL_MERGE_SOURCE_RELATIONSHIP = f"{_REL_NS}/mailMergeSource"
+_MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP = f"{_REL_NS}/recipientData"
+_EXTERNAL_TARGET_MODE_ATTRIBUTE = ' TargetMode="External"'
 _SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
 _FRAME_RELATIONSHIP = f"{_REL_NS}/frame"
 _IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
@@ -152,6 +157,7 @@ _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.do
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
 _MAIL_MERGE_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-mail-merge.csv"
+_MAIL_MERGE_RECIPIENT_HASH = "148730921"
 _SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
 _SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
 _FRAME_SOURCE_APPROVED = "https://approved.example.invalid/dcab-frame.docx"
@@ -212,6 +218,7 @@ class DocumentVariant:
     modern_comment_done: bool | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
+    mail_merge_recipient_active: bool | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -458,6 +465,28 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(mail_merge_data_source_target=_MAIL_MERGE_SOURCE_APPROVED),
         candidate=DocumentVariant(mail_merge_data_source_target=_MAIL_MERGE_SOURCE_CANDIDATE),
         changed_members=("word/_rels/settings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="review.mail_merge_recipient_active_state_changed",
+        title="Mail-merge recipient selection changed",
+        description=(
+            "A fixed mail-merge source and recipient-data topology retain one record hash "
+            "while its stored inclusion state changes from false to true."
+        ),
+        fact={
+            "kind": "mail_merge_recipient_active_state_changed",
+            "source": "word_mail_merge_recipient_data",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(
+            mail_merge_data_source_target=_MAIL_MERGE_SOURCE_APPROVED,
+            mail_merge_recipient_active=False,
+        ),
+        candidate=DocumentVariant(
+            mail_merge_data_source_target=_MAIL_MERGE_SOURCE_APPROVED,
+            mail_merge_recipient_active=True,
+        ),
+        changed_members=("word/recipientData.xml",),
     ),
     CaseSpec(
         case_id="external.subdocument_target_retargeted",
@@ -750,8 +779,13 @@ def render_package(variant: DocumentVariant) -> bytes:
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
+        or variant.mail_merge_recipient_active is not None
     ):
         members["word/_rels/settings.xml.rels"] = _settings_relationships(variant)
+    if variant.mail_merge_recipient_active is not None:
+        members["word/recipientData.xml"] = _mail_merge_recipient_data_xml(
+            variant.mail_merge_recipient_active
+        )
     if variant.alternative_format_import_payload is not None:
         members["word/afchunk1.html"] = variant.alternative_format_import_payload
     if variant.custom_xml_payload is not None:
@@ -870,6 +904,15 @@ def _validate_variant(variant: DocumentVariant) -> None:
         and not variant.mail_merge_data_source_target
     ):
         raise FixtureBuildError("mail-merge data-source target cannot be empty")
+    if variant.mail_merge_recipient_active is not None and not isinstance(
+        variant.mail_merge_recipient_active, bool
+    ):
+        raise FixtureBuildError("mail-merge recipient active state must be boolean")
+    if (
+        variant.mail_merge_recipient_active is not None
+        and variant.mail_merge_data_source_target is None
+    ):
+        raise FixtureBuildError("mail-merge recipient data requires a data-source target")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -925,6 +968,8 @@ def _content_types(variant: DocumentVariant) -> bytes:
     ]
     if variant.custom_xml_payload is not None:
         overrides.append(("/customXml/itemProps1.xml", _CUSTOM_XML_PROPERTIES_CONTENT_TYPE))
+    if variant.mail_merge_recipient_active is not None:
+        overrides.append(("/word/recipientData.xml", _MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE))
     if variant.alternative_format_import_payload is not None:
         overrides.append(("/word/afchunk1.html", _ALT_CHUNK_CONTENT_TYPE))
     if variant.macro_payload is not None:
@@ -1410,10 +1455,7 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         else ""
     )
     mail_merge = (
-        '<w:mailMerge><w:mainDocumentType w:val="formLetters"/>'
-        '<w:dataSource r:id="rIdMailMergeSource"/></w:mailMerge>'
-        if variant.mail_merge_data_source_target is not None
-        else ""
+        _mail_merge_markup(variant) if variant.mail_merge_data_source_target is not None else ""
     )
     document_variables = (
         _document_variables_markup(variant.document_variable_value)
@@ -1435,6 +1477,37 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     ).encode()
 
 
+def _mail_merge_markup(variant: DocumentVariant) -> str:
+    """Return one standards-ordered mail-merge configuration.
+
+    The recipient-data reference is an internal settings relationship, while
+    the fixed text-source relationship remains external. Neither is resolved.
+    """
+
+    recipient_data = (
+        '<w:odso><w:recipientData r:id="rIdMailMergeRecipientData"/></w:odso>'
+        if variant.mail_merge_recipient_active is not None
+        else ""
+    )
+    return (
+        '<w:mailMerge><w:mainDocumentType w:val="formLetters"/>'
+        '<w:dataType w:val="text"/><w:dataSource r:id="rIdMailMergeSource"/>'
+        f"{recipient_data}</w:mailMerge>"
+    )
+
+
+def _mail_merge_recipient_data_xml(active: bool) -> bytes:
+    """Return one fixed recipient record with an explicit inclusion-state boundary."""
+
+    value = "true" if active else "false"
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<w:recipients xmlns:w="{_WORD_NS}"><w:recipientData>'
+        f'<w:active w:val="{value}"/><w:hash w:val="{_MAIL_MERGE_RECIPIENT_HASH}"/>'
+        "</w:recipientData></w:recipients>"
+    ).encode()
+
+
 def _document_variables_markup(value: str) -> str:
     """Return one deterministic, persisted document-variable declaration."""
 
@@ -1447,13 +1520,14 @@ def _document_variables_markup(value: str) -> str:
 
 
 def _settings_relationships(variant: DocumentVariant) -> bytes:
-    relationships: list[tuple[str, str, str]] = []
+    relationships: list[tuple[str, str, str, str]] = []
     if variant.attached_template_target is not None:
         relationships.append(
             (
                 "rIdAttachedTemplate",
                 _ATTACHED_TEMPLATE_RELATIONSHIP,
                 variant.attached_template_target,
+                "External",
             )
         )
     if variant.mail_merge_data_source_target is not None:
@@ -1462,6 +1536,16 @@ def _settings_relationships(variant: DocumentVariant) -> bytes:
                 "rIdMailMergeSource",
                 _MAIL_MERGE_SOURCE_RELATIONSHIP,
                 variant.mail_merge_data_source_target,
+                "External",
+            )
+        )
+    if variant.mail_merge_recipient_active is not None:
+        relationships.append(
+            (
+                "rIdMailMergeRecipientData",
+                _MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP,
+                "recipientData.xml",
+                "Internal",
             )
         )
     if not relationships:
@@ -1472,8 +1556,9 @@ def _settings_relationships(variant: DocumentVariant) -> bytes:
     ]
     values.extend(
         f'<Relationship Id="{relationship_id}" Type="{relationship_type}" '
-        f'Target="{html.escape(target, quote=True)}" TargetMode="External"/>'
-        for relationship_id, relationship_type, target in relationships
+        f'Target="{html.escape(target, quote=True)}"'
+        f"{_EXTERNAL_TARGET_MODE_ATTRIBUTE if target_mode == 'External' else ''}/>"
+        for relationship_id, relationship_type, target, target_mode in relationships
     )
     values.append("</Relationships>")
     return "".join(values).encode()
