@@ -1,8 +1,8 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-one paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-two paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
-It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct hyperlinks and field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, attached-template, mail-merge data-source, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro and embedded-OLE payload boundaries.
+It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, attached-template, mail-merge data-source, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro and embedded-OLE payload boundaries.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, or executes code.
 
@@ -37,14 +37,15 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the twenty-one cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the twenty-two cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
 
-Version 0.10 adds a case but retains fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-one-case catalogue.
+Version 0.11 adds a case but retains fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-two-case catalogue.
 
 | Case | Declared fact | Reference convention |
 | --- | --- | --- |
 | `interaction.word_hyperlink_target_retargeted` | `word_hyperlink_target_changed` | block |
 | `interaction.word_hyperlink_added` | `word_hyperlink_added` | block |
+| `interaction.vml_shape_hyperlink_target_retargeted` | `vml_shape_hyperlink_target_changed` | block |
 | `interaction.word_hyperlink_field_target_retargeted` | `field_target_changed` | block |
 | `interaction.taskpane_auto_show_setting_enabled` | `taskpane_auto_show_setting_enabled` | review |
 | `external.include_text_field_target_retargeted` | `external_field_source_changed` | block |
@@ -71,7 +72,7 @@ Version 0.10 adds a case but retains fixture schema version 1: the truth and obs
 
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro and embedded-object bytes are inert text markers, not valid executable/OLE payloads. The public truth files deliberately exclude:
 
-- targets, field instructions, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions, VML shape IDs and target frames, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, payload bytes, and payload fingerprints;
 - protection hashes, salts, passwords, and document content outside the fixed synthetic text.
 
@@ -80,6 +81,8 @@ The structural verifier compares generated bytes, validates ZIP/XML/package inva
 ## Why these surfaces
 
 Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its display text to a relationship target. [Microsoft's Open XML API documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.hyperlink?view=openxml-3.0.1) shows that relationship-backed form. Word content controls can bind to custom XML data, so mapping and embedded-data changes are meaningful stored review surfaces. [Microsoft documents those bindings](https://learn.microsoft.com/en-us/visualstudio/vsto/content-controls?view=visualstudio), including their relationship to custom XML parts.
+
+Legacy VML shapes are a separate direct-link surface. Microsoft documents a `v:shape`'s [`href` as a hyperlink target](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.shape?view=openxml-3.0.1), and its Word OOXML guidance explains that Word 2007 continued to use VML for shapes and text boxes. DCAB fixes one compact `w:pict`/`v:rect` shape, its target frame, and its styling attributes while changing only the direct `href`. It does not resolve the URL, select a rendering branch, simulate a click, or claim that any client will follow the link.
 
 Office's [web-extension XML format](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-owexml/29f59f30-b835-461a-bd8a-ca400a7bc717) stores Office Add-in structures in Word documents. Microsoft's [auto-open task-pane guidance](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/automatically-open-a-task-pane-with-a-document) specifies internally related `webextension` and `taskpane` parts and the `Office.AutoShowTaskpaneWithDocument` property. DCAB fixes the entire internal topology, task-pane shape, reference, and property name while changing only that property's stored `false`/`true` value. It does not retrieve, install, authenticate, or execute an add-in, and it does not claim that a pane opens: Microsoft documents that the add-in must already be installed, and current auto-open availability depends on deployment/support conditions.
 

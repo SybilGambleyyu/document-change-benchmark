@@ -159,6 +159,38 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         return observed, _evidence(
             "external_relationships_changed", "word_hyperlink_markup_inventory_changed"
         )
+    if kind == "vml_shape_hyperlink_target_changed":
+        observed = _has_changes(report, "word_vml_hyperlink_inventory_changed") and all(
+            (
+                _same_count(report, "word_vml_hyperlinks", "vml_hyperlink_element_count", 1),
+                _same_count(report, "word_vml_hyperlinks", "vml_hyperlink_story_count", 1),
+                _same_count(
+                    report,
+                    "word_vml_hyperlinks",
+                    "concrete_shape_vml_hyperlink_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_hyperlinks",
+                    "group_vml_hyperlink_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_hyperlinks",
+                    "shape_type_vml_hyperlink_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_hyperlinks",
+                    "target_attribute_vml_hyperlink_count",
+                    1,
+                ),
+            )
+        )
+        return observed, _evidence("word_vml_hyperlink_inventory_changed")
     if kind == "field_target_changed":
         observed = _has_changes(report, "word_hyperlink_field_inventory_changed") and _same_count(
             report, "word_hyperlink_fields", "hyperlink_field_reference_count", 1

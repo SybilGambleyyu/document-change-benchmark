@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 21,
-        "fact_count": 21,
+        "case_count": 22,
+        "fact_count": 22,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 21, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 22, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 40
-    assert loaded_package_count == 42
+    assert loaded_document_count == 42
+    assert loaded_package_count == 44
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -158,6 +158,78 @@ def test_document_variable_pair_has_a_fixed_field_and_one_value_boundary() -> No
     fields = list(document_root.iter(f"{{{word_namespace}}}fldSimple"))
     assert len(fields) == 1
     assert fields[0].get(f"{{{word_namespace}}}instr") == " DOCVARIABLE DCABReviewState "
+
+
+def test_vml_shape_hyperlink_pair_has_one_direct_target_boundary() -> None:
+    """One legacy VML rectangle keeps its shape while its direct href changes."""
+
+    case = FIXTURES / "interaction.vml_shape_hyperlink_target_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_root = ET.fromstring(baseline_document)
+        candidate_root = ET.fromstring(candidate_document)
+
+    assert (
+        candidate_document.replace(
+            b"https://candidate.example.invalid/dcab-vml-shape",
+            b"https://approved.example.invalid/dcab-vml-shape",
+            1,
+        )
+        == baseline_document
+    )
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    vml_namespace = "urn:schemas-microsoft-com:vml"
+    pict_tag = f"{{{word_namespace}}}pict"
+    run_tag = f"{{{word_namespace}}}r"
+    text_tag = f"{{{word_namespace}}}t"
+    baseline_pictures = list(baseline_root.iter(pict_tag))
+    candidate_pictures = list(candidate_root.iter(pict_tag))
+    assert len(baseline_pictures) == len(candidate_pictures) == 1
+    for root, picture in zip(
+        (baseline_root, candidate_root),
+        (baseline_pictures[0], candidate_pictures[0]),
+        strict=True,
+    ):
+        assert picture.attrib == {}
+        assert len(picture) == 1
+        picture_runs = [run for run in root.iter(run_tag) if picture in run]
+        assert len(picture_runs) == 1
+        assert picture_runs[0].attrib == {}
+        assert list(picture_runs[0]) == [picture]
+    baseline_shape = baseline_pictures[0][0]
+    candidate_shape = candidate_pictures[0][0]
+    assert baseline_shape.tag == candidate_shape.tag == f"{{{vml_namespace}}}rect"
+    assert baseline_shape.attrib == {
+        "id": "DCABVmlLinkShape",
+        "style": "width:1pt;height:1pt",
+        "filled": "f",
+        "stroked": "f",
+        "href": "https://approved.example.invalid/dcab-vml-shape",
+        "target": "_blank",
+    }
+    assert candidate_shape.attrib == {
+        "id": "DCABVmlLinkShape",
+        "style": "width:1pt;height:1pt",
+        "filled": "f",
+        "stroked": "f",
+        "href": "https://candidate.example.invalid/dcab-vml-shape",
+        "target": "_blank",
+    }
+    assert [node.text for node in baseline_root.iter(text_tag)] == [
+        node.text for node in candidate_root.iter(text_tag)
+    ]
 
 
 def test_permission_range_pair_has_a_fixed_boundary_and_one_editor_change() -> None:
@@ -356,6 +428,8 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "{F928A11C-9164-4F8A-8D92-556677889900}",
         "EXCatalog",
         "Office.AutoShowTaskpaneWithDocument",
+        "DCABVmlLinkShape",
+        "_blank",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

@@ -92,6 +92,10 @@ _CUSTOM_XML_STORE_ID = "{3B1F8916-697D-4C4E-A4A1-55F64D9F2A80}"
 
 _DIRECT_LINK_APPROVED = "https://approved.example.invalid/dcab-hyperlink"
 _DIRECT_LINK_CANDIDATE = "https://candidate.example.invalid/dcab-hyperlink"
+_VML_SHAPE_HYPERLINK_APPROVED = "https://approved.example.invalid/dcab-vml-shape"
+_VML_SHAPE_HYPERLINK_CANDIDATE = "https://candidate.example.invalid/dcab-vml-shape"
+_VML_SHAPE_ID = "DCABVmlLinkShape"
+_VML_SHAPE_TARGET_FRAME = "_blank"
 _FIELD_LINK_APPROVED = "https://approved.example.invalid/dcab-field-hyperlink"
 _FIELD_LINK_CANDIDATE = "https://candidate.example.invalid/dcab-field-hyperlink"
 _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
@@ -150,6 +154,7 @@ class DocumentVariant:
 
     extension: str = "docx"
     direct_hyperlink_target: str | None = None
+    vml_shape_hyperlink_target: str | None = None
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
     dde_source_file: str | None = None
@@ -229,6 +234,22 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(),
         candidate=DocumentVariant(direct_hyperlink_target=_DIRECT_LINK_CANDIDATE),
         changed_members=("word/_rels/document.xml.rels", "word/document.xml"),
+    ),
+    CaseSpec(
+        case_id="interaction.vml_shape_hyperlink_target_retargeted",
+        title="VML shape hyperlink target retargeted",
+        description=(
+            "A legacy VML rectangle retains its fixed shape and target frame while its "
+            "direct hyperlink target changes."
+        ),
+        fact={
+            "kind": "vml_shape_hyperlink_target_changed",
+            "source": "word_vml",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(vml_shape_hyperlink_target=_VML_SHAPE_HYPERLINK_APPROVED),
+        candidate=DocumentVariant(vml_shape_hyperlink_target=_VML_SHAPE_HYPERLINK_CANDIDATE),
+        changed_members=("word/document.xml",),
     ),
     CaseSpec(
         case_id="interaction.word_hyperlink_field_target_retargeted",
@@ -660,6 +681,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("custom XML fixtures require a data-binding declaration")
     if variant.direct_hyperlink_target is not None and not variant.direct_hyperlink_target:
         raise FixtureBuildError("hyperlink target cannot be empty")
+    if variant.vml_shape_hyperlink_target is not None and not variant.vml_shape_hyperlink_target:
+        raise FixtureBuildError("VML shape hyperlink target cannot be empty")
     if variant.hyperlink_field_target is not None and not variant.hyperlink_field_target:
         raise FixtureBuildError("HYPERLINK target cannot be empty")
     if variant.include_text_target is not None and not variant.include_text_target:
@@ -890,6 +913,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.direct_hyperlink_target is not None
         else hyperlink_run
     )
+    vml_shape_hyperlink_markup = (
+        _vml_shape_hyperlink_markup(variant.vml_shape_hyperlink_target)
+        if variant.vml_shape_hyperlink_target is not None
+        else ""
+    )
     hyperlink_field_markup = (
         _simple_field(f' HYPERLINK "{variant.hyperlink_field_target}" ', _HYPERLINK_FIELD_RESULT)
         if variant.hyperlink_field_target is not None
@@ -941,7 +969,8 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f'<w:document xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}" '
         f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
         "<w:body><w:p>"
-        f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
+        f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{vml_shape_hyperlink_markup}"
+        f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
@@ -982,6 +1011,17 @@ def _permission_range_markup(editor: str) -> str:
         f'<w:permStart w:id="{_PERMISSION_RANGE_MARKER_ID}" w:ed="{escaped_editor}"/>'
         f"{_run(_PERMISSION_RANGE_TEXT)}"
         f'<w:permEnd w:id="{_PERMISSION_RANGE_MARKER_ID}"/>'
+    )
+
+
+def _vml_shape_hyperlink_markup(target: str) -> str:
+    """Return one direct legacy VML shape hyperlink without a relationship."""
+
+    return (
+        f'<w:r><w:pict><v:rect id="{_VML_SHAPE_ID}" '
+        'style="width:1pt;height:1pt" filled="f" stroked="f" '
+        f'href="{html.escape(target, quote=True)}" target="{_VML_SHAPE_TARGET_FRAME}"/>'
+        "</w:pict></w:r>"
     )
 
 

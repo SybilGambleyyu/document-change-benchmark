@@ -59,6 +59,9 @@ from .build import (
     _VBA_PROJECT_CONTENT_TYPE,
     _VBA_PROJECT_RELATIONSHIP,
     _VISIBLE_TEXT,
+    _VML_NS,
+    _VML_SHAPE_ID,
+    _VML_SHAPE_TARGET_FRAME,
     _WORD_NS,
     _WORDPROCESSING_DRAWING_NS,
     CASE_IDS,
@@ -354,6 +357,43 @@ def _validate_document_xml(
         _invalid(spec, f"{side} direct hyperlink markup is invalid")
     if hyperlinks and hyperlinks[0].get(f"{{{_REL_NS}}}id") != "rIdHyperlink":
         _invalid(spec, f"{side} direct hyperlink relationship is invalid")
+
+    vml_pictures = list(root.iter(_word_tag("pict")))
+    expected_vml_shape_count = int(variant.vml_shape_hyperlink_target is not None)
+    if len(vml_pictures) != expected_vml_shape_count:
+        _invalid(spec, f"{side} VML shape hyperlink markup is invalid")
+    if vml_pictures:
+        picture = vml_pictures[0]
+        picture_runs = [run for run in root.iter(_word_tag("r")) if picture in run]
+        if (
+            picture.attrib
+            or len(picture) != 1
+            or (picture.text or "").strip()
+            or (picture.tail or "").strip()
+            or len(picture_runs) != 1
+            or picture_runs[0].attrib
+            or len(picture_runs[0]) != 1
+            or (picture_runs[0].text or "").strip()
+            or (picture_runs[0].tail or "").strip()
+        ):
+            _invalid(spec, f"{side} VML shape hyperlink markup is invalid")
+        shape = picture[0]
+        expected_shape_attributes = {
+            "id": _VML_SHAPE_ID,
+            "style": "width:1pt;height:1pt",
+            "filled": "f",
+            "stroked": "f",
+            "href": variant.vml_shape_hyperlink_target,
+            "target": _VML_SHAPE_TARGET_FRAME,
+        }
+        if (
+            shape.tag != f"{{{_VML_NS}}}rect"
+            or shape.attrib != expected_shape_attributes
+            or list(shape)
+            or (shape.text or "").strip()
+            or (shape.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} VML shape hyperlink markup is invalid")
 
     linked_picture_blips = list(root.iter(_drawing_tag("blip")))
     expected_linked_picture_count = int(variant.drawing_linked_picture_target is not None)
@@ -818,6 +858,8 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         _TASKPANE_WEB_EXTENSION_REFERENCE_ID,
         _TASKPANE_WEB_EXTENSION_REFERENCE_STORE,
         _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
+        _VML_SHAPE_ID,
+        _VML_SHAPE_TARGET_FRAME,
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")
