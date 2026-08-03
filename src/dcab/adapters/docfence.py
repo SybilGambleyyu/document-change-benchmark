@@ -414,6 +414,26 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             1,
         )
         return observed, _evidence("attached_custom_xml_schema_inventory_changed")
+    if kind == "field_recalculation_on_open_enabled":
+        observed = _has_changes(report, "field_update_on_open_inventory_changed") and all(
+            (
+                _count_pair(
+                    report,
+                    "field_updates_on_open",
+                    "field_update_on_open_enabled_setting_count",
+                    0,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "field_updates_on_open",
+                    "field_update_on_open_disabled_setting_count",
+                    1,
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("field_update_on_open_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

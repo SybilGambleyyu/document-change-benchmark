@@ -230,6 +230,7 @@ class DocumentVariant:
     mail_merge_recipient_active: bool | None = None
     save_through_xslt_target: str | None = None
     attached_custom_xml_schema_namespace: str | None = None
+    field_recalculation_on_open: bool | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -536,6 +537,22 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         candidate=DocumentVariant(
             attached_custom_xml_schema_namespace=_ATTACHED_CUSTOM_XML_SCHEMA_CANDIDATE
         ),
+        changed_members=("word/settings.xml",),
+    ),
+    CaseSpec(
+        case_id="review.field_recalculation_on_open_enabled",
+        title="Automatic field recalculation on open enabled",
+        description=(
+            "A fixed Settings leaf changes from explicit disabled to enabled, asking a "
+            "supporting host to recalculate field results when opening the document."
+        ),
+        fact={
+            "kind": "field_recalculation_on_open_enabled",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(field_recalculation_on_open=False),
+        candidate=DocumentVariant(field_recalculation_on_open=True),
         changed_members=("word/settings.xml",),
     ),
     CaseSpec(
@@ -971,6 +988,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         and not variant.attached_custom_xml_schema_namespace
     ):
         raise FixtureBuildError("attached custom XML schema namespace cannot be empty")
+    if variant.field_recalculation_on_open is not None and not isinstance(
+        variant.field_recalculation_on_open, bool
+    ):
+        raise FixtureBuildError("field-recalculation-on-open setting must be boolean")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1523,6 +1544,11 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     save_through_xslt = (
         _save_through_xslt_markup() if variant.save_through_xslt_target is not None else ""
     )
+    field_recalculation_on_open = (
+        _field_recalculation_on_open_markup(variant.field_recalculation_on_open)
+        if variant.field_recalculation_on_open is not None
+        else ""
+    )
     document_variables = (
         _document_variables_markup(variant.document_variable_value)
         if variant.document_variable_value is not None
@@ -1541,7 +1567,7 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
         f"{attached_custom_xml_schema}{attached_template}{mail_merge}{track_revisions}"
-        f"{protection}{save_through_xslt}"
+        f"{protection}{save_through_xslt}{field_recalculation_on_open}"
         f"{document_variables}"
         "</w:settings>"
     ).encode()
@@ -1586,6 +1612,18 @@ def _save_through_xslt_markup() -> str:
     """
 
     return '<w:useXSLTWhenSaving w:val="true"/><w:saveThroughXslt r:id="rIdSaveThroughXslt"/>'
+
+
+def _field_recalculation_on_open_markup(enabled: bool) -> str:
+    """Return a direct ``CT_OnOff`` request to recalculate fields on open.
+
+    The fixture carries only the stored request. Building it never opens a
+    document client, parses or evaluates a field code, updates a field result,
+    resolves a target, or makes a host-behavior claim.
+    """
+
+    value = "true" if enabled else "false"
+    return f'<w:updateFields w:val="{value}"/>'
 
 
 def _attached_custom_xml_schema_markup(namespace: str) -> str:

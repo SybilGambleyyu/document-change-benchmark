@@ -1122,6 +1122,9 @@ def _validate_settings(
     mail_merges = list(root.iter(_word_tag("mailMerge")))
     use_xslt_when_saving = list(root.iter(_word_tag("useXSLTWhenSaving")))
     save_through_xslt = list(root.iter(_word_tag("saveThroughXslt")))
+    field_recalculations_on_open = [
+        element for element in root if element.tag == _word_tag("updateFields")
+    ]
     attached_custom_xml_schemas = [
         element for element in root if element.tag == _word_tag("attachedSchema")
     ]
@@ -1149,6 +1152,8 @@ def _validate_settings(
         variant.attached_custom_xml_schema_namespace is not None
     ):
         _invalid(spec, f"{side} attached custom XML schema setting is invalid")
+    if len(field_recalculations_on_open) != int(variant.field_recalculation_on_open is not None):
+        _invalid(spec, f"{side} field-recalculation-on-open setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if attached_custom_xml_schemas:
@@ -1161,6 +1166,16 @@ def _validate_settings(
             or (attached_schema.tail or "").strip()
         ):
             _invalid(spec, f"{side} attached custom XML schema setting is invalid")
+    if field_recalculations_on_open:
+        field_recalculation = field_recalculations_on_open[0]
+        expected_value = "true" if variant.field_recalculation_on_open else "false"
+        if (
+            field_recalculation.attrib != {_word_tag("val"): expected_value}
+            or list(field_recalculation)
+            or (field_recalculation.text or "").strip()
+            or (field_recalculation.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} field-recalculation-on-open setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():
