@@ -53,6 +53,7 @@ _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
+_MAIL_MERGE_SOURCE_RELATIONSHIP = f"{_REL_NS}/mailMergeSource"
 _SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
 _IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
 _ALT_CHUNK_RELATIONSHIP = f"{_REL_NS}/afChunk"
@@ -78,6 +79,8 @@ _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
 _INCLUDE_TEXT_CANDIDATE = "https://candidate.example.invalid/dcab-source.docx"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
+_MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
+_MAIL_MERGE_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-mail-merge.csv"
 _SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
 _SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
 _LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
@@ -115,6 +118,7 @@ class DocumentVariant:
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
     attached_template_target: str | None = None
+    mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
     drawing_linked_picture_target: str | None = None
     alternative_format_import_payload: bytes | None = None
@@ -237,6 +241,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="block",
         baseline=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_APPROVED),
         candidate=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_CANDIDATE),
+        changed_members=("word/_rels/settings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="external.mail_merge_data_source_target_retargeted",
+        title="Mail-merge data-source target retargeted",
+        description=(
+            "A w:mailMerge w:dataSource settings anchor retains its relationship ID while the "
+            "external mail-merge data-source relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "kind": "mail_merge_data_source_target_changed",
+            "relationship_category": "mail_merge_source",
+            "source": "word_settings",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(mail_merge_data_source_target=_MAIL_MERGE_SOURCE_APPROVED),
+        candidate=DocumentVariant(mail_merge_data_source_target=_MAIL_MERGE_SOURCE_CANDIDATE),
         changed_members=("word/_rels/settings.xml.rels",),
     ),
     CaseSpec(
@@ -453,7 +475,10 @@ def render_package(variant: DocumentVariant) -> bytes:
         "word/settings.xml": _settings_xml(variant),
         "word/styles.xml": _styles_xml(),
     }
-    if variant.attached_template_target is not None:
+    if (
+        variant.attached_template_target is not None
+        or variant.mail_merge_data_source_target is not None
+    ):
         members["word/_rels/settings.xml.rels"] = _settings_relationships(variant)
     if variant.alternative_format_import_payload is not None:
         members["word/afchunk1.html"] = variant.alternative_format_import_payload
@@ -523,6 +548,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
+    if (
+        variant.mail_merge_data_source_target is not None
+        and not variant.mail_merge_data_source_target
+    ):
+        raise FixtureBuildError("mail-merge data-source target cannot be empty")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if (
@@ -766,7 +796,13 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         if variant.attached_template_target is not None
         else ""
     )
-    relationship_namespace = f' xmlns:r="{_REL_NS}"' if attached_template else ""
+    mail_merge = (
+        '<w:mailMerge><w:mainDocumentType w:val="formLetters"/>'
+        '<w:dataSource r:id="rIdMailMergeSource"/></w:mailMerge>'
+        if variant.mail_merge_data_source_target is not None
+        else ""
+    )
+    relationship_namespace = f' xmlns:r="{_REL_NS}"' if attached_template or mail_merge else ""
     track_revisions = "<w:trackRevisions/>" if variant.track_revisions else ""
     protection = (
         '<w:documentProtection w:edit="readOnly" w:enforcement="1"/>'
@@ -776,22 +812,41 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
-        f"{attached_template}{track_revisions}{protection}</w:settings>"
+        f"{attached_template}{track_revisions}{protection}{mail_merge}</w:settings>"
     ).encode()
 
 
 def _settings_relationships(variant: DocumentVariant) -> bytes:
-    if variant.attached_template_target is None:
-        raise FixtureBuildError("settings relationships require an attached template")
-    return (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
-        '<Relationship Id="rIdAttachedTemplate" '
-        f'Type="{_ATTACHED_TEMPLATE_RELATIONSHIP}" '
-        f'Target="{html.escape(variant.attached_template_target, quote=True)}" '
-        'TargetMode="External"/>'
-        "</Relationships>"
-    ).encode()
+    relationships: list[tuple[str, str, str]] = []
+    if variant.attached_template_target is not None:
+        relationships.append(
+            (
+                "rIdAttachedTemplate",
+                _ATTACHED_TEMPLATE_RELATIONSHIP,
+                variant.attached_template_target,
+            )
+        )
+    if variant.mail_merge_data_source_target is not None:
+        relationships.append(
+            (
+                "rIdMailMergeSource",
+                _MAIL_MERGE_SOURCE_RELATIONSHIP,
+                variant.mail_merge_data_source_target,
+            )
+        )
+    if not relationships:
+        raise FixtureBuildError("settings relationships require a relationship-backed setting")
+    values = [
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">',
+    ]
+    values.extend(
+        f'<Relationship Id="{relationship_id}" Type="{relationship_type}" '
+        f'Target="{html.escape(target, quote=True)}" TargetMode="External"/>'
+        for relationship_id, relationship_type, target in relationships
+    )
+    values.append("</Relationships>")
+    return "".join(values).encode()
 
 
 def _styles_xml() -> bytes:

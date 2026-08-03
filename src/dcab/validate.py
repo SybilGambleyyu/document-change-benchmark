@@ -28,6 +28,7 @@ from .build import (
     _DRAWING_NS,
     _HYPERLINK_RELATIONSHIP,
     _IMAGE_RELATIONSHIP,
+    _MAIL_MERGE_SOURCE_RELATIONSHIP,
     _OFFICE_DOCUMENT_RELATIONSHIP,
     _OFFICE_VML_NS,
     _OLE_CONTENT_TYPE,
@@ -152,7 +153,10 @@ def _validate_package(
         expected_members.add("word/embeddings/oleObject1.bin")
     if variant.alternative_format_import_payload is not None:
         expected_members.add("word/afchunk1.html")
-    if variant.attached_template_target is not None:
+    if (
+        variant.attached_template_target is not None
+        or variant.mail_merge_data_source_target is not None
+    ):
         expected_members.add("word/_rels/settings.xml.rels")
     if set(members) != expected_members:
         _invalid(spec, f"{side} package members are invalid")
@@ -404,6 +408,7 @@ def _validate_settings(
     tracks = list(root.iter(_word_tag("trackRevisions")))
     protections = list(root.iter(_word_tag("documentProtection")))
     attached_templates = list(root.iter(_word_tag("attachedTemplate")))
+    mail_merges = list(root.iter(_word_tag("mailMerge")))
     if len(tracks) != int(variant.track_revisions):
         _invalid(spec, f"{side} Track Changes setting is invalid")
     if len(protections) != int(variant.document_protection):
@@ -415,6 +420,22 @@ def _validate_settings(
         and attached_templates[0].get(f"{{{_REL_NS}}}id") != "rIdAttachedTemplate"
     ):
         _invalid(spec, f"{side} attached template relationship is invalid")
+    if len(mail_merges) != int(variant.mail_merge_data_source_target is not None):
+        _invalid(spec, f"{side} mail-merge setting is invalid")
+    if mail_merges:
+        mail_merge = mail_merges[0]
+        main_document_types = [
+            element for element in mail_merge if element.tag == _word_tag("mainDocumentType")
+        ]
+        data_sources = [element for element in mail_merge if element.tag == _word_tag("dataSource")]
+        if (
+            len(mail_merge) != 2
+            or len(main_document_types) != 1
+            or main_document_types[0].get(_word_tag("val")) != "formLetters"
+            or len(data_sources) != 1
+            or data_sources[0].get(f"{{{_REL_NS}}}id") != "rIdMailMergeSource"
+        ):
+            _invalid(spec, f"{side} mail-merge data-source anchor is invalid")
     if protections:
         protection = protections[0]
         if (
@@ -432,22 +453,28 @@ def _validate_settings_relationships(
     members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
 ) -> None:
     has_relationships = "word/_rels/settings.xml.rels" in members
-    if variant.attached_template_target is None:
+    if variant.attached_template_target is None and variant.mail_merge_data_source_target is None:
         if has_relationships:
             _invalid(spec, f"{side} unexpected settings relationships are present")
         return
     if not has_relationships:
-        _invalid(spec, f"{side} attached template relationships are absent")
+        _invalid(spec, f"{side} settings relationships are absent")
     relationships = _relationship_map(members["word/_rels/settings.xml.rels"], spec)
-    expected = {
-        "rIdAttachedTemplate": (
+    expected = {}
+    if variant.attached_template_target is not None:
+        expected["rIdAttachedTemplate"] = (
             _ATTACHED_TEMPLATE_RELATIONSHIP,
             variant.attached_template_target,
             "external",
         )
-    }
+    if variant.mail_merge_data_source_target is not None:
+        expected["rIdMailMergeSource"] = (
+            _MAIL_MERGE_SOURCE_RELATIONSHIP,
+            variant.mail_merge_data_source_target,
+            "external",
+        )
     if relationships != expected:
-        _invalid(spec, f"{side} attached template relationships are invalid")
+        _invalid(spec, f"{side} settings relationships are invalid")
 
 
 def _validate_styles(members: dict[str, bytes], spec: CaseSpec, side: str) -> None:
@@ -546,6 +573,7 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "example.invalid",
         "rIdHyperlink",
         "rIdAttachedTemplate",
+        "rIdMailMergeSource",
         "rIdSubDocument",
         "rIdLinkedPicture",
         "rIdAltChunk",

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from docx import Document
@@ -18,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 16,
-        "fact_count": 16,
+        "case_count": 17,
+        "fact_count": 17,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 16, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 17, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -49,8 +51,49 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 30
-    assert loaded_package_count == 32
+    assert loaded_document_count == 32
+    assert loaded_package_count == 34
+
+
+def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
+    """The data-source marker stays fixed while only its external target changes."""
+
+    case = FIXTURES / "external.mail_merge_data_source_target_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/_rels/settings.xml.rels"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        settings = baseline.read("word/settings.xml")
+        assert settings == candidate.read("word/settings.xml")
+        settings_root = ET.fromstring(settings)
+        baseline_relationships = ET.fromstring(baseline.read("word/_rels/settings.xml.rels"))
+        candidate_relationships = ET.fromstring(candidate.read("word/_rels/settings.xml.rels"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    source = settings_root.find(f"{{{word_namespace}}}mailMerge/{{{word_namespace}}}dataSource")
+    assert source is not None
+    assert source.get(f"{{{relationship_namespace}}}id") == "rIdMailMergeSource"
+    baseline_relationship = baseline_relationships.find(
+        f"{{{package_relationship_namespace}}}Relationship[@Id='rIdMailMergeSource']"
+    )
+    candidate_relationship = candidate_relationships.find(
+        f"{{{package_relationship_namespace}}}Relationship[@Id='rIdMailMergeSource']"
+    )
+    assert baseline_relationship is not None
+    assert candidate_relationship is not None
+    assert baseline_relationship.get("Type") == f"{relationship_namespace}/mailMergeSource"
+    assert candidate_relationship.get("Type") == f"{relationship_namespace}/mailMergeSource"
+    assert baseline_relationship.get("TargetMode") == "External"
+    assert candidate_relationship.get("TargetMode") == "External"
+    assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
 
 
 def test_public_truth_excludes_generated_sensitive_material() -> None:
@@ -58,6 +101,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "example.invalid",
         "rIdHyperlink",
         "rIdAttachedTemplate",
+        "rIdMailMergeSource",
         "rIdSubDocument",
         "rIdLinkedPicture",
         "rIdAltChunk",
