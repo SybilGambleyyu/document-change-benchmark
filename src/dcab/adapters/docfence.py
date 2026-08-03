@@ -192,6 +192,29 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         return observed, _evidence(
             "external_relationships_changed", "external_document_dependency_inventory_changed"
         )
+    if kind == "drawing_linked_picture_target_changed":
+        observed = (
+            _has_changes(
+                report,
+                "external_relationships_changed",
+                "word_drawing_linked_picture_inventory_changed",
+            )
+            and _same_count(
+                report,
+                "word_drawing_linked_pictures",
+                "drawing_linked_picture_reference_count",
+                1,
+            )
+            and _same_count(
+                report,
+                "word_drawing_linked_pictures",
+                "external_image_relationship_drawing_linked_picture_count",
+                1,
+            )
+        )
+        return observed, _evidence(
+            "external_relationships_changed", "word_drawing_linked_picture_inventory_changed"
+        )
     if kind == "hidden_text_run_added":
         observed = _has_changes(report, "hidden_text_inventory_changed") and _count_pair(
             report, "hidden_text_run_count", None, 0, 1

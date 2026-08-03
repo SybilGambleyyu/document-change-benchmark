@@ -23,12 +23,15 @@ from .build import (
     _CUSTOM_XML_RELATIONSHIP,
     _DOCM_MAIN_CONTENT_TYPE,
     _DOCX_MAIN_CONTENT_TYPE,
+    _DRAWING_NS,
     _HYPERLINK_RELATIONSHIP,
+    _IMAGE_RELATIONSHIP,
     _OFFICE_DOCUMENT_RELATIONSHIP,
     _OFFICE_VML_NS,
     _OLE_CONTENT_TYPE,
     _OLE_OBJECT_RELATIONSHIP,
     _PACKAGE_REL_NS,
+    _PICTURE_NS,
     _REL_NS,
     _SETTINGS_CONTENT_TYPE,
     _SETTINGS_RELATIONSHIP,
@@ -38,6 +41,7 @@ from .build import (
     _VBA_PROJECT_RELATIONSHIP,
     _VISIBLE_TEXT,
     _WORD_NS,
+    _WORDPROCESSING_DRAWING_NS,
     CASE_IDS,
     CASE_SPECS,
     FIXTURE_SCHEMA_VERSION,
@@ -245,6 +249,12 @@ def _validate_document_relationships(
             variant.direct_hyperlink_target,
             "external",
         )
+    if variant.drawing_linked_picture_target is not None:
+        expected["rIdLinkedPicture"] = (
+            _IMAGE_RELATIONSHIP,
+            variant.drawing_linked_picture_target,
+            "external",
+        )
     if variant.custom_xml_payload is not None:
         expected["rIdCustomXml"] = (_CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "internal")
     if variant.macro_payload is not None:
@@ -275,6 +285,28 @@ def _validate_document_xml(
         _invalid(spec, f"{side} direct hyperlink markup is invalid")
     if hyperlinks and hyperlinks[0].get(f"{{{_REL_NS}}}id") != "rIdHyperlink":
         _invalid(spec, f"{side} direct hyperlink relationship is invalid")
+
+    linked_picture_blips = list(root.iter(_drawing_tag("blip")))
+    expected_linked_picture_count = int(variant.drawing_linked_picture_target is not None)
+    if len(linked_picture_blips) != expected_linked_picture_count:
+        _invalid(spec, f"{side} linked-picture markup is invalid")
+    if linked_picture_blips:
+        linked_picture = linked_picture_blips[0]
+        if (
+            linked_picture.get(f"{{{_REL_NS}}}link") != "rIdLinkedPicture"
+            or linked_picture.get(f"{{{_REL_NS}}}embed") is not None
+        ):
+            _invalid(spec, f"{side} linked-picture relationship is invalid")
+        graphic_data = list(root.iter(_drawing_tag("graphicData")))
+        inlines = list(root.iter(_wordprocessing_drawing_tag("inline")))
+        pictures = list(root.iter(_picture_tag("pic")))
+        if (
+            len(graphic_data) != 1
+            or graphic_data[0].get("uri") != _PICTURE_NS
+            or len(inlines) != 1
+            or len(pictures) != 1
+        ):
+            _invalid(spec, f"{side} linked-picture DrawingML shape is invalid")
 
     fields = list(root.iter(_word_tag("fldSimple")))
     expected_fields: list[tuple[str, str]] = []
@@ -476,6 +508,8 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
     forbidden = (
         "example.invalid",
         "rIdHyperlink",
+        "rIdAttachedTemplate",
+        "rIdLinkedPicture",
         "rIdVbaProject",
         "rIdOleObject",
         "vbaProject.bin",
@@ -504,6 +538,18 @@ def _run_has_vanish(run: ET.Element) -> bool:
 
 def _word_tag(local_name: str) -> str:
     return f"{{{_WORD_NS}}}{local_name}"
+
+
+def _drawing_tag(local_name: str) -> str:
+    return f"{{{_DRAWING_NS}}}{local_name}"
+
+
+def _wordprocessing_drawing_tag(local_name: str) -> str:
+    return f"{{{_WORDPROCESSING_DRAWING_NS}}}{local_name}"
+
+
+def _picture_tag(local_name: str) -> str:
+    return f"{{{_PICTURE_NS}}}{local_name}"
 
 
 def _invalid(spec: CaseSpec, message: str) -> None:

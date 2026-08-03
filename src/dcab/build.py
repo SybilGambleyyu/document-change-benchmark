@@ -24,6 +24,11 @@ _CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-type
 _PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_WORDPROCESSING_DRAWING_NS = (
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+)
+_PICTURE_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 _OFFICE_VML_NS = "urn:schemas-microsoft-com:office:office"
 _VML_NS = "urn:schemas-microsoft-com:vml"
 _CUSTOM_XML_PROPERTIES_NS = "http://schemas.openxmlformats.org/officeDocument/2006/customXml"
@@ -47,6 +52,7 @@ _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
+_IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
 _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
 _VBA_PROJECT_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
@@ -69,6 +75,8 @@ _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
 _INCLUDE_TEXT_CANDIDATE = "https://candidate.example.invalid/dcab-source.docx"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
+_LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
+_LINKED_PICTURE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-picture.png"
 _BINDING_XPATH_APPROVED = "/dcab:fixture/dcab:approved"
 _BINDING_XPATH_CANDIDATE = "/dcab:fixture/dcab:candidate"
 _CUSTOM_XML_APPROVED = (
@@ -98,6 +106,7 @@ class DocumentVariant:
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
     attached_template_target: str | None = None
+    drawing_linked_picture_target: str | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -218,6 +227,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_APPROVED),
         candidate=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_CANDIDATE),
         changed_members=("word/_rels/settings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="external.drawing_linked_picture_target_retargeted",
+        title="DrawingML linked-picture target retargeted",
+        description=(
+            "An a:blip r:link marker retains its stored DrawingML shape while the "
+            "external image relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "kind": "drawing_linked_picture_target_changed",
+            "relationship_category": "image",
+            "source": "word_drawing",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(drawing_linked_picture_target=_LINKED_PICTURE_APPROVED),
+        candidate=DocumentVariant(drawing_linked_picture_target=_LINKED_PICTURE_CANDIDATE),
+        changed_members=("word/_rels/document.xml.rels",),
     ),
     CaseSpec(
         case_id="review.hidden_text_run_added",
@@ -448,6 +475,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
+    if (
+        variant.drawing_linked_picture_target is not None
+        and not variant.drawing_linked_picture_target
+    ):
+        raise FixtureBuildError("linked-picture target cannot be empty")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -522,6 +554,15 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
         relationships.append(
             ("rIdHyperlink", _HYPERLINK_RELATIONSHIP, variant.direct_hyperlink_target, "External")
         )
+    if variant.drawing_linked_picture_target is not None:
+        relationships.append(
+            (
+                "rIdLinkedPicture",
+                _IMAGE_RELATIONSHIP,
+                variant.drawing_linked_picture_target,
+                "External",
+            )
+        )
     if variant.custom_xml_payload is not None:
         relationships.append(
             ("rIdCustomXml", _CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "Internal")
@@ -550,6 +591,12 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
 
 
 def _document_xml(variant: DocumentVariant) -> bytes:
+    drawing_namespaces = (
+        f' xmlns:a="{_DRAWING_NS}" xmlns:wp="{_WORDPROCESSING_DRAWING_NS}" '
+        f'xmlns:pic="{_PICTURE_NS}"'
+        if variant.drawing_linked_picture_target is not None
+        else ""
+    )
     hyperlink_run = _run(_HYPERLINK_DISPLAY_TEXT)
     hyperlink_markup = (
         f'<w:hyperlink r:id="rIdHyperlink">{hyperlink_run}</w:hyperlink>'
@@ -576,13 +623,16 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     )
     binding_markup = _binding_markup(variant.data_binding_xpath)
     ole_markup = _ole_markup() if variant.embedded_payload is not None else ""
+    linked_picture_markup = (
+        _linked_picture_markup() if variant.drawing_linked_picture_target is not None else ""
+    )
     value = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}" '
-        f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}">'
+        f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
-        f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}"
+        f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
         '</w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
@@ -618,6 +668,24 @@ def _ole_markup() -> str:
         '<w:r><w:object><v:shape id="DCABOleShape" '
         'style="width:0;height:0"><o:OLEObject Type="Embed" ProgID="DCAB.Synthetic" '
         'r:id="rIdOleObject"/></v:shape></w:object></w:r>'
+    )
+
+
+def _linked_picture_markup() -> str:
+    """Return a compact, relationship-backed DrawingML linked-picture marker."""
+
+    return (
+        '<w:r><w:drawing><wp:inline><wp:extent cx="12700" cy="12700"/>'
+        '<wp:docPr id="1" name="DCAB linked picture"/>'
+        '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/>'
+        "</wp:cNvGraphicFramePr><a:graphic><a:graphicData "
+        f'uri="{_PICTURE_NS}"><pic:pic><pic:nvPicPr>'
+        '<pic:cNvPr id="0" name="dcab-linked-picture.png"/><pic:cNvPicPr/>'
+        '</pic:nvPicPr><pic:blipFill><a:blip r:link="rIdLinkedPicture"/>'
+        "<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr>"
+        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="12700" cy="12700"/>'
+        '</a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic>'
+        "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
     )
 
 
