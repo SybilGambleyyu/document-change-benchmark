@@ -46,6 +46,7 @@ _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
 _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
+_ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
 _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
 _VBA_PROJECT_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
@@ -66,6 +67,8 @@ _FIELD_LINK_APPROVED = "https://approved.example.invalid/dcab-field-hyperlink"
 _FIELD_LINK_CANDIDATE = "https://candidate.example.invalid/dcab-field-hyperlink"
 _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
 _INCLUDE_TEXT_CANDIDATE = "https://candidate.example.invalid/dcab-source.docx"
+_ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
+_ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _BINDING_XPATH_APPROVED = "/dcab:fixture/dcab:approved"
 _BINDING_XPATH_CANDIDATE = "/dcab:fixture/dcab:candidate"
 _CUSTOM_XML_APPROVED = (
@@ -94,6 +97,7 @@ class DocumentVariant:
     direct_hyperlink_target: str | None = None
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
+    attached_template_target: str | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -196,6 +200,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(include_text_target=_INCLUDE_TEXT_APPROVED),
         candidate=DocumentVariant(include_text_target=_INCLUDE_TEXT_CANDIDATE),
         changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
+        case_id="external.attached_template_target_retargeted",
+        title="Attached template target retargeted",
+        description=(
+            "A w:attachedTemplate settings anchor retains its relationship ID while the "
+            "external attached-template relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "dependency": "attached_template",
+            "kind": "external_document_dependency_target_changed",
+            "source": "word_settings",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_APPROVED),
+        candidate=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_CANDIDATE),
+        changed_members=("word/_rels/settings.xml.rels",),
     ),
     CaseSpec(
         case_id="review.hidden_text_run_added",
@@ -358,6 +380,8 @@ def render_package(variant: DocumentVariant) -> bytes:
         "word/settings.xml": _settings_xml(variant),
         "word/styles.xml": _styles_xml(),
     }
+    if variant.attached_template_target is not None:
+        members["word/_rels/settings.xml.rels"] = _settings_relationships(variant)
     if variant.custom_xml_payload is not None:
         members.update(
             {
@@ -422,6 +446,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("HYPERLINK target cannot be empty")
     if variant.include_text_target is not None and not variant.include_text_target:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
+    if variant.attached_template_target is not None and not variant.attached_template_target:
+        raise FixtureBuildError("attached template target cannot be empty")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -596,6 +622,12 @@ def _ole_markup() -> str:
 
 
 def _settings_xml(variant: DocumentVariant) -> bytes:
+    attached_template = (
+        '<w:attachedTemplate r:id="rIdAttachedTemplate"/>'
+        if variant.attached_template_target is not None
+        else ""
+    )
+    relationship_namespace = f' xmlns:r="{_REL_NS}"' if attached_template else ""
     track_revisions = "<w:trackRevisions/>" if variant.track_revisions else ""
     protection = (
         '<w:documentProtection w:edit="readOnly" w:enforcement="1"/>'
@@ -604,7 +636,22 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     )
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        f'<w:settings xmlns:w="{_WORD_NS}">{track_revisions}{protection}</w:settings>'
+        f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
+        f"{attached_template}{track_revisions}{protection}</w:settings>"
+    ).encode()
+
+
+def _settings_relationships(variant: DocumentVariant) -> bytes:
+    if variant.attached_template_target is None:
+        raise FixtureBuildError("settings relationships require an attached template")
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
+        '<Relationship Id="rIdAttachedTemplate" '
+        f'Type="{_ATTACHED_TEMPLATE_RELATIONSHIP}" '
+        f'Target="{html.escape(variant.attached_template_target, quote=True)}" '
+        'TargetMode="External"/>'
+        "</Relationships>"
     ).encode()
 
 

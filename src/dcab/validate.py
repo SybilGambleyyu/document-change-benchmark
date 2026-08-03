@@ -15,6 +15,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from .build import (
+    _ATTACHED_TEMPLATE_RELATIONSHIP,
     _CONTENT_TYPES_NS,
     _CUSTOM_XML_PROPERTIES_CONTENT_TYPE,
     _CUSTOM_XML_PROPERTIES_NS,
@@ -142,6 +143,8 @@ def _validate_package(
         expected_members.add("word/vbaProject.bin")
     if variant.embedded_payload is not None:
         expected_members.add("word/embeddings/oleObject1.bin")
+    if variant.attached_template_target is not None:
+        expected_members.add("word/_rels/settings.xml.rels")
     if set(members) != expected_members:
         _invalid(spec, f"{side} package members are invalid")
 
@@ -150,6 +153,7 @@ def _validate_package(
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
     _validate_settings(members, variant, spec, side)
+    _validate_settings_relationships(members, variant, spec, side)
     _validate_styles(members, spec, side)
     _validate_custom_xml(members, variant, spec, side)
     if (
@@ -330,10 +334,18 @@ def _validate_settings(
         _invalid(spec, f"{side} settings root is invalid")
     tracks = list(root.iter(_word_tag("trackRevisions")))
     protections = list(root.iter(_word_tag("documentProtection")))
+    attached_templates = list(root.iter(_word_tag("attachedTemplate")))
     if len(tracks) != int(variant.track_revisions):
         _invalid(spec, f"{side} Track Changes setting is invalid")
     if len(protections) != int(variant.document_protection):
         _invalid(spec, f"{side} document protection setting is invalid")
+    if len(attached_templates) != int(variant.attached_template_target is not None):
+        _invalid(spec, f"{side} attached template setting is invalid")
+    if (
+        attached_templates
+        and attached_templates[0].get(f"{{{_REL_NS}}}id") != "rIdAttachedTemplate"
+    ):
+        _invalid(spec, f"{side} attached template relationship is invalid")
     if protections:
         protection = protections[0]
         if (
@@ -345,6 +357,28 @@ def _validate_settings(
             )
         ):
             _invalid(spec, f"{side} document protection setting is invalid")
+
+
+def _validate_settings_relationships(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    has_relationships = "word/_rels/settings.xml.rels" in members
+    if variant.attached_template_target is None:
+        if has_relationships:
+            _invalid(spec, f"{side} unexpected settings relationships are present")
+        return
+    if not has_relationships:
+        _invalid(spec, f"{side} attached template relationships are absent")
+    relationships = _relationship_map(members["word/_rels/settings.xml.rels"], spec)
+    expected = {
+        "rIdAttachedTemplate": (
+            _ATTACHED_TEMPLATE_RELATIONSHIP,
+            variant.attached_template_target,
+            "external",
+        )
+    }
+    if relationships != expected:
+        _invalid(spec, f"{side} attached template relationships are invalid")
 
 
 def _validate_styles(members: dict[str, bytes], spec: CaseSpec, side: str) -> None:
