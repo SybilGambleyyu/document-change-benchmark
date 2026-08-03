@@ -67,6 +67,7 @@ _HYPERLINK_DISPLAY_TEXT = "DCAB hyperlink display text"
 _HYPERLINK_FIELD_RESULT = "DCAB hyperlink field result"
 _INCLUDE_TEXT_FIELD_RESULT = "DCAB include-text field result"
 _DDE_FIELD_RESULT = "DCAB DDE field result"
+_DOCUMENT_VARIABLE_FIELD_RESULT = "DCAB document-variable field result"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
 _BINDING_TEXT = "DCAB bound-content carrier"
@@ -82,6 +83,9 @@ _DDE_APPLICATION = "DCAB"
 _DDE_ITEM = "Sheet1!R1C1"
 _DDE_SOURCE_APPROVED = "C:\\DCAB\\approved-source.xlsx"
 _DDE_SOURCE_CANDIDATE = "C:\\DCAB\\candidate-source.xlsx"
+_DOCUMENT_VARIABLE_NAME = "DCABReviewState"
+_DOCUMENT_VARIABLE_APPROVED = "approved-state"
+_DOCUMENT_VARIABLE_CANDIDATE = "candidate-state"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
@@ -123,6 +127,7 @@ class DocumentVariant:
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
     dde_source_file: str | None = None
+    document_variable_value: str | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
@@ -247,6 +252,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(dde_source_file=_DDE_SOURCE_APPROVED),
         candidate=DocumentVariant(dde_source_file=_DDE_SOURCE_CANDIDATE),
         changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
+        case_id="binding.document_variable_value_changed",
+        title="Document-variable value changed",
+        description=(
+            "A fixed DOCVARIABLE field reference retains its stored result text and private "
+            "variable name while the value of its settings-stored document variable changes."
+        ),
+        fact={
+            "binding": "document_variable",
+            "kind": "document_variable_value_changed",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(document_variable_value=_DOCUMENT_VARIABLE_APPROVED),
+        candidate=DocumentVariant(document_variable_value=_DOCUMENT_VARIABLE_CANDIDATE),
+        changed_members=("word/settings.xml",),
     ),
     CaseSpec(
         case_id="external.attached_template_target_retargeted",
@@ -571,6 +593,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
     if variant.dde_source_file is not None and not variant.dde_source_file:
         raise FixtureBuildError("DDE source file cannot be empty")
+    if variant.document_variable_value is not None and not variant.document_variable_value:
+        raise FixtureBuildError("document-variable value cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
     if (
@@ -736,6 +760,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.dde_source_file is not None
         else ""
     )
+    document_variable_field_markup = (
+        _simple_field(_document_variable_field_instruction(), _DOCUMENT_VARIABLE_FIELD_RESULT)
+        if variant.document_variable_value is not None
+        else ""
+    )
     hidden_properties = "<w:rPr><w:vanish/></w:rPr>" if variant.hidden_text else ""
     hidden_markup = f"<w:r>{hidden_properties}<w:t>{_HIDDEN_TEXT}</w:t></w:r>"
     revision_run = _run(_REVISION_TEXT)
@@ -763,7 +792,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
-        f"{dde_field_markup}"
+        f"{dde_field_markup}{document_variable_field_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
@@ -787,6 +816,12 @@ def _dde_field_instruction(source_file: str) -> str:
     """Return the fixed-shape, nonexecuting DDE field instruction for a fixture."""
 
     return f' DDE {_DDE_APPLICATION} "{source_file}" "{_DDE_ITEM}" '
+
+
+def _document_variable_field_instruction() -> str:
+    """Return the fixed DOCVARIABLE field instruction for a fixture."""
+
+    return f" DOCVARIABLE {_DOCUMENT_VARIABLE_NAME} "
 
 
 def _binding_markup(xpath: str | None) -> str:
@@ -839,6 +874,11 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         if variant.mail_merge_data_source_target is not None
         else ""
     )
+    document_variables = (
+        _document_variables_markup(variant.document_variable_value)
+        if variant.document_variable_value is not None
+        else ""
+    )
     relationship_namespace = f' xmlns:r="{_REL_NS}"' if attached_template or mail_merge else ""
     track_revisions = "<w:trackRevisions/>" if variant.track_revisions else ""
     protection = (
@@ -849,8 +889,20 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
-        f"{attached_template}{track_revisions}{protection}{mail_merge}</w:settings>"
+        f"{attached_template}{mail_merge}{track_revisions}{protection}{document_variables}"
+        "</w:settings>"
     ).encode()
+
+
+def _document_variables_markup(value: str) -> str:
+    """Return one deterministic, persisted document-variable declaration."""
+
+    return (
+        "<w:docVars>"
+        f'<w:docVar w:name="{html.escape(_DOCUMENT_VARIABLE_NAME, quote=True)}" '
+        f'w:val="{html.escape(value, quote=True)}"/>'
+        "</w:docVars>"
+    )
 
 
 def _settings_relationships(variant: DocumentVariant) -> bytes:

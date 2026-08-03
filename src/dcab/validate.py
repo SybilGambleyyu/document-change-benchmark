@@ -24,6 +24,7 @@ from .build import (
     _CUSTOM_XML_PROPERTIES_RELATIONSHIP,
     _CUSTOM_XML_RELATIONSHIP,
     _DOCM_MAIN_CONTENT_TYPE,
+    _DOCUMENT_VARIABLE_NAME,
     _DOCX_MAIN_CONTENT_TYPE,
     _DRAWING_NS,
     _HYPERLINK_RELATIONSHIP,
@@ -52,6 +53,7 @@ from .build import (
     CaseSpec,
     DocumentVariant,
     _dde_field_instruction,
+    _document_variable_field_instruction,
     case_files,
     truth_manifest,
 )
@@ -349,6 +351,8 @@ def _validate_document_xml(
         expected_field_instructions.append(f' INCLUDETEXT "{variant.include_text_target}" ')
     if variant.dde_source_file is not None:
         expected_field_instructions.append(_dde_field_instruction(variant.dde_source_file))
+    if variant.document_variable_value is not None:
+        expected_field_instructions.append(_document_variable_field_instruction())
     if len(fields) != len(expected_field_instructions):
         _invalid(spec, f"{side} field markup is invalid")
     for field, expected_instruction in zip(fields, expected_field_instructions, strict=True):
@@ -411,6 +415,9 @@ def _validate_settings(
     protections = list(root.iter(_word_tag("documentProtection")))
     attached_templates = list(root.iter(_word_tag("attachedTemplate")))
     mail_merges = list(root.iter(_word_tag("mailMerge")))
+    document_variable_containers = [
+        element for element in root if element.tag == _word_tag("docVars")
+    ]
     if len(tracks) != int(variant.track_revisions):
         _invalid(spec, f"{side} Track Changes setting is invalid")
     if len(protections) != int(variant.document_protection):
@@ -424,6 +431,25 @@ def _validate_settings(
         _invalid(spec, f"{side} attached template relationship is invalid")
     if len(mail_merges) != int(variant.mail_merge_data_source_target is not None):
         _invalid(spec, f"{side} mail-merge setting is invalid")
+    if len(document_variable_containers) != int(variant.document_variable_value is not None):
+        _invalid(spec, f"{side} document-variable setting is invalid")
+    if document_variable_containers:
+        container = document_variable_containers[0]
+        if len(container) != 1 or (container.text or "").strip():
+            _invalid(spec, f"{side} document-variable setting is invalid")
+        document_variable = container[0]
+        expected_attributes = {
+            _word_tag("name"): _DOCUMENT_VARIABLE_NAME,
+            _word_tag("val"): variant.document_variable_value,
+        }
+        if (
+            document_variable.tag != _word_tag("docVar")
+            or document_variable.attrib != expected_attributes
+            or list(document_variable)
+            or (document_variable.text or "").strip()
+            or (document_variable.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} document-variable setting is invalid")
     if mail_merges:
         mail_merge = mail_merges[0]
         main_document_types = [
@@ -590,6 +616,9 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "candidate-source.xlsx",
         "Sheet1!R1C1",
         "DDE DCAB",
+        "DCABReviewState",
+        "approved-state",
+        "candidate-state",
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")

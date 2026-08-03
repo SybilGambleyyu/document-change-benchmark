@@ -290,6 +290,54 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             report, "word_protection", "document_protection_read_only_count", 0, 1
         )
         return observed, _evidence("word_protection_inventory_changed")
+    if kind == "document_variable_value_changed":
+        observed = _has_changes(report, "word_document_variable_inventory_changed") and all(
+            (
+                _same_count(
+                    report,
+                    "word_document_variables",
+                    "document_variable_container_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variables",
+                    "document_variable_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variables",
+                    "empty_document_variable_value_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variable_fields",
+                    "document_variable_field_reference_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variable_fields",
+                    "literal_document_variable_field_reference_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variable_fields",
+                    "literal_document_variable_field_reference_matching_stored_variable_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_document_variable_fields",
+                    "literal_document_variable_field_reference_not_matching_stored_variable_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("word_document_variable_inventory_changed")
     if kind == "data_binding_mapping_changed":
         observed = _has_changes(report, "data_binding_inventory_changed") and _same_count(
             report, "data_bindings", "data_binding_count", 1

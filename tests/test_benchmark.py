@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 18,
-        "fact_count": 18,
+        "case_count": 19,
+        "fact_count": 19,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 18, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 19, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 34
-    assert loaded_package_count == 36
+    assert loaded_document_count == 36
+    assert loaded_package_count == 38
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -124,6 +124,42 @@ def test_dde_field_pair_has_a_fixed_shape_and_one_source_argument_boundary() -> 
     assert list(fields_before[0].itertext()) == list(fields_after[0].itertext())
 
 
+def test_document_variable_pair_has_a_fixed_field_and_one_value_boundary() -> None:
+    """The field reference stays fixed while one persisted document-variable value changes."""
+
+    case = FIXTURES / "binding.document_variable_value_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/settings.xml"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        baseline_settings = ET.fromstring(baseline.read("word/settings.xml"))
+        candidate_settings = ET.fromstring(candidate.read("word/settings.xml"))
+        document_root = ET.fromstring(baseline.read("word/document.xml"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    doc_vars_before = baseline_settings.find(f"{{{word_namespace}}}docVars")
+    doc_vars_after = candidate_settings.find(f"{{{word_namespace}}}docVars")
+    assert doc_vars_before is not None
+    assert doc_vars_after is not None
+    assert len(doc_vars_before) == len(doc_vars_after) == 1
+    variable_before = doc_vars_before[0]
+    variable_after = doc_vars_after[0]
+    assert variable_before.tag == variable_after.tag == f"{{{word_namespace}}}docVar"
+    assert variable_before.get(f"{{{word_namespace}}}name") == "DCABReviewState"
+    assert variable_after.get(f"{{{word_namespace}}}name") == "DCABReviewState"
+    assert variable_before.get(f"{{{word_namespace}}}val") == "approved-state"
+    assert variable_after.get(f"{{{word_namespace}}}val") == "candidate-state"
+    fields = list(document_root.iter(f"{{{word_namespace}}}fldSimple"))
+    assert len(fields) == 1
+    assert fields[0].get(f"{{{word_namespace}}}instr") == " DOCVARIABLE DCABReviewState "
+
+
 def test_public_truth_excludes_generated_sensitive_material() -> None:
     forbidden = (
         "example.invalid",
@@ -144,6 +180,9 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "candidate-source.xlsx",
         "Sheet1!R1C1",
         "DDE DCAB",
+        "DCABReviewState",
+        "approved-state",
+        "candidate-state",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")
