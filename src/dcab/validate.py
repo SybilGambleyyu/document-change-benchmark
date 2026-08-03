@@ -35,6 +35,8 @@ from .build import (
     _OLE_CONTENT_TYPE,
     _OLE_OBJECT_RELATIONSHIP,
     _PACKAGE_REL_NS,
+    _PERMISSION_RANGE_MARKER_ID,
+    _PERMISSION_RANGE_TEXT,
     _PICTURE_NS,
     _REL_NS,
     _SETTINGS_CONTENT_TYPE,
@@ -359,6 +361,58 @@ def _validate_document_xml(
         instruction = field.get(_word_tag("instr"))
         if instruction != expected_instruction:
             _invalid(spec, f"{side} field instruction is invalid")
+
+    permission_starts = list(root.iter(_word_tag("permStart")))
+    permission_ends = list(root.iter(_word_tag("permEnd")))
+    expected_permission_range_count = int(variant.permission_range_editor is not None)
+    if (
+        len(permission_starts) != expected_permission_range_count
+        or len(permission_ends) != expected_permission_range_count
+    ):
+        _invalid(spec, f"{side} editable-range permission markup is invalid")
+    if permission_starts:
+        permission_start = permission_starts[0]
+        permission_end = permission_ends[0]
+        expected_start_attributes = {
+            _word_tag("id"): _PERMISSION_RANGE_MARKER_ID,
+            _word_tag("ed"): variant.permission_range_editor,
+        }
+        expected_end_attributes = {_word_tag("id"): _PERMISSION_RANGE_MARKER_ID}
+        if (
+            permission_start.attrib != expected_start_attributes
+            or permission_end.attrib != expected_end_attributes
+            or list(permission_start)
+            or list(permission_end)
+            or (permission_start.text or "").strip()
+            or (permission_end.text or "").strip()
+            or (permission_start.tail or "").strip()
+            or (permission_end.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} editable-range permission markup is invalid")
+        permission_paragraphs = [
+            paragraph
+            for paragraph in root.iter(_word_tag("p"))
+            if permission_start in paragraph or permission_end in paragraph
+        ]
+        if len(permission_paragraphs) != 1:
+            _invalid(spec, f"{side} editable-range permission markup is invalid")
+        paragraph_children = list(permission_paragraphs[0])
+        start_index = paragraph_children.index(permission_start)
+        end_index = paragraph_children.index(permission_end)
+        if end_index != start_index + 2:
+            _invalid(spec, f"{side} editable-range permission markup is invalid")
+        carrier = paragraph_children[start_index + 1]
+        if (
+            carrier.tag != _word_tag("r")
+            or carrier.attrib
+            or len(carrier) != 1
+            or carrier[0].tag != _word_tag("t")
+            or carrier[0].attrib
+            or carrier[0].text != _PERMISSION_RANGE_TEXT
+            or list(carrier[0])
+            or (carrier[0].tail or "").strip()
+        ):
+            _invalid(spec, f"{side} editable-range permission markup is invalid")
 
     hidden_count = sum(1 for run in root.iter(_word_tag("r")) if _run_has_vanish(run))
     if hidden_count != int(variant.hidden_text):

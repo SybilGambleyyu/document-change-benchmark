@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 19,
-        "fact_count": 19,
+        "case_count": 20,
+        "fact_count": 20,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 19, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 20, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 36
-    assert loaded_package_count == 38
+    assert loaded_document_count == 38
+    assert loaded_package_count == 40
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -160,6 +160,60 @@ def test_document_variable_pair_has_a_fixed_field_and_one_value_boundary() -> No
     assert fields[0].get(f"{{{word_namespace}}}instr") == " DOCVARIABLE DCABReviewState "
 
 
+def test_permission_range_pair_has_a_fixed_boundary_and_one_editor_change() -> None:
+    """Only a synthetic individual editor assignment changes inside one marker pair."""
+
+    case = FIXTURES / "review.permission_range_editor_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        baseline_root = ET.fromstring(baseline.read("word/document.xml"))
+        candidate_root = ET.fromstring(candidate.read("word/document.xml"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    permission_start_tag = f"{{{word_namespace}}}permStart"
+    permission_end_tag = f"{{{word_namespace}}}permEnd"
+    run_tag = f"{{{word_namespace}}}r"
+    text_tag = f"{{{word_namespace}}}t"
+    baseline_start = list(baseline_root.iter(permission_start_tag))
+    candidate_start = list(candidate_root.iter(permission_start_tag))
+    baseline_end = list(baseline_root.iter(permission_end_tag))
+    candidate_end = list(candidate_root.iter(permission_end_tag))
+    assert len(baseline_start) == len(candidate_start) == 1
+    assert len(baseline_end) == len(candidate_end) == 1
+    assert baseline_start[0].get(f"{{{word_namespace}}}id") == "0"
+    assert candidate_start[0].get(f"{{{word_namespace}}}id") == "0"
+    assert baseline_end[0].get(f"{{{word_namespace}}}id") == "0"
+    assert candidate_end[0].get(f"{{{word_namespace}}}id") == "0"
+    assert baseline_start[0].get(f"{{{word_namespace}}}ed") == "DCAB_EDITOR_BASELINE"
+    assert candidate_start[0].get(f"{{{word_namespace}}}ed") == "DCAB_EDITOR_CANDIDATE"
+    for root in (baseline_root, candidate_root):
+        paragraphs = list(root.iter(f"{{{word_namespace}}}p"))
+        matching = [
+            paragraph
+            for paragraph in paragraphs
+            if any(child.tag == permission_start_tag for child in paragraph)
+        ]
+        assert len(matching) == 1
+        children = list(matching[0])
+        start_index = next(
+            index for index, child in enumerate(children) if child.tag == permission_start_tag
+        )
+        assert children[start_index + 1].tag == run_tag
+        assert children[start_index + 1][0].tag == text_tag
+        assert children[start_index + 1][0].text == "DCAB editable-range carrier"
+        assert children[start_index + 2].tag == permission_end_tag
+    assert [node.text for node in baseline_root.iter(text_tag)] == [
+        node.text for node in candidate_root.iter(text_tag)
+    ]
+
+
 def test_public_truth_excludes_generated_sensitive_material() -> None:
     forbidden = (
         "example.invalid",
@@ -183,6 +237,9 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "DCABReviewState",
         "approved-state",
         "candidate-state",
+        "DCAB_EDITOR_BASELINE",
+        "DCAB_EDITOR_CANDIDATE",
+        "DCAB editable-range carrier",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

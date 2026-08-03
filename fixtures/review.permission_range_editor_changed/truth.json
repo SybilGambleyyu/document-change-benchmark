@@ -1,0 +1,21 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "One paired w:permStart/w:permEnd boundary retains its marker ID and covered stored text while its synthetic individual editor assignment changes.",
+  "facts": [
+    {
+      "kind": "permission_range_editor_changed",
+      "source": "word_permission_markup"
+    }
+  ],
+  "id": "review.permission_range_editor_changed",
+  "invariants": {
+    "changed_member_count": 1,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "review",
+  "schema_version": 1,
+  "title": "Editable-range editor assignment changed"
+}

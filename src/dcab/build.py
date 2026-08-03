@@ -68,6 +68,7 @@ _HYPERLINK_FIELD_RESULT = "DCAB hyperlink field result"
 _INCLUDE_TEXT_FIELD_RESULT = "DCAB include-text field result"
 _DDE_FIELD_RESULT = "DCAB DDE field result"
 _DOCUMENT_VARIABLE_FIELD_RESULT = "DCAB document-variable field result"
+_PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
 _BINDING_TEXT = "DCAB bound-content carrier"
@@ -86,6 +87,9 @@ _DDE_SOURCE_CANDIDATE = "C:\\DCAB\\candidate-source.xlsx"
 _DOCUMENT_VARIABLE_NAME = "DCABReviewState"
 _DOCUMENT_VARIABLE_APPROVED = "approved-state"
 _DOCUMENT_VARIABLE_CANDIDATE = "candidate-state"
+_PERMISSION_RANGE_MARKER_ID = "0"
+_PERMISSION_RANGE_EDITOR_APPROVED = "DCAB_EDITOR_BASELINE"
+_PERMISSION_RANGE_EDITOR_CANDIDATE = "DCAB_EDITOR_CANDIDATE"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
@@ -128,6 +132,7 @@ class DocumentVariant:
     include_text_target: str | None = None
     dde_source_file: str | None = None
     document_variable_value: str | None = None
+    permission_range_editor: str | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
@@ -408,6 +413,22 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("word/settings.xml",),
     ),
     CaseSpec(
+        case_id="review.permission_range_editor_changed",
+        title="Editable-range editor assignment changed",
+        description=(
+            "One paired w:permStart/w:permEnd boundary retains its marker ID and covered "
+            "stored text while its synthetic individual editor assignment changes."
+        ),
+        fact={
+            "kind": "permission_range_editor_changed",
+            "source": "word_permission_markup",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(permission_range_editor=_PERMISSION_RANGE_EDITOR_APPROVED),
+        candidate=DocumentVariant(permission_range_editor=_PERMISSION_RANGE_EDITOR_CANDIDATE),
+        changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
         case_id="binding.data_binding_xpath_retargeted",
         title="Content-control data binding retargeted",
         description=(
@@ -595,6 +616,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("DDE source file cannot be empty")
     if variant.document_variable_value is not None and not variant.document_variable_value:
         raise FixtureBuildError("document-variable value cannot be empty")
+    if variant.permission_range_editor is not None and not variant.permission_range_editor:
+        raise FixtureBuildError("permission-range editor cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
     if (
@@ -765,6 +788,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.document_variable_value is not None
         else ""
     )
+    permission_range_markup = (
+        _permission_range_markup(variant.permission_range_editor)
+        if variant.permission_range_editor is not None
+        else ""
+    )
     hidden_properties = "<w:rPr><w:vanish/></w:rPr>" if variant.hidden_text else ""
     hidden_markup = f"<w:r>{hidden_properties}<w:t>{_HIDDEN_TEXT}</w:t></w:r>"
     revision_run = _run(_REVISION_TEXT)
@@ -792,7 +820,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
-        f"{dde_field_markup}{document_variable_field_markup}"
+        f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
@@ -822,6 +850,17 @@ def _document_variable_field_instruction() -> str:
     """Return the fixed DOCVARIABLE field instruction for a fixture."""
 
     return f" DOCVARIABLE {_DOCUMENT_VARIABLE_NAME} "
+
+
+def _permission_range_markup(editor: str) -> str:
+    """Return one paired, synthetic editable-range permission boundary."""
+
+    escaped_editor = html.escape(editor, quote=True)
+    return (
+        f'<w:permStart w:id="{_PERMISSION_RANGE_MARKER_ID}" w:ed="{escaped_editor}"/>'
+        f"{_run(_PERMISSION_RANGE_TEXT)}"
+        f'<w:permEnd w:id="{_PERMISSION_RANGE_MARKER_ID}"/>'
+    )
 
 
 def _binding_markup(xpath: str | None) -> str:

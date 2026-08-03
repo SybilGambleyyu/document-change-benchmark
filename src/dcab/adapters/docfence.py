@@ -290,6 +290,37 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             report, "word_protection", "document_protection_read_only_count", 0, 1
         )
         return observed, _evidence("word_protection_inventory_changed")
+    if kind == "permission_range_editor_changed":
+        observed = _has_changes(report, "word_permission_range_inventory_changed") and all(
+            (
+                _same_count(report, "word_permission_ranges", "permission_range_story_count", 1),
+                _same_count(report, "word_permission_ranges", "permission_start_count", 1),
+                _same_count(report, "word_permission_ranges", "permission_end_count", 1),
+                _same_count(report, "word_permission_ranges", "paired_permission_range_count", 1),
+                _same_count(report, "word_permission_ranges", "unpaired_permission_start_count", 0),
+                _same_count(report, "word_permission_ranges", "unpaired_permission_end_count", 0),
+                _same_count(
+                    report,
+                    "word_permission_ranges",
+                    "individual_editor_assignment_count",
+                    1,
+                ),
+                _same_count(report, "word_permission_ranges", "editor_group_assignment_count", 0),
+                _same_count(
+                    report,
+                    "word_permission_ranges",
+                    "table_column_permission_range_start_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_permission_ranges",
+                    "custom_xml_displaced_permission_marker_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("word_permission_range_inventory_changed")
     if kind == "document_variable_value_changed":
         observed = _has_changes(report, "word_document_variable_inventory_changed") and all(
             (
