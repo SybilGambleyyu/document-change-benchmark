@@ -66,6 +66,7 @@ _VISIBLE_TEXT = "DCAB synthetic static-review fixture"
 _HYPERLINK_DISPLAY_TEXT = "DCAB hyperlink display text"
 _HYPERLINK_FIELD_RESULT = "DCAB hyperlink field result"
 _INCLUDE_TEXT_FIELD_RESULT = "DCAB include-text field result"
+_DDE_FIELD_RESULT = "DCAB DDE field result"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
 _BINDING_TEXT = "DCAB bound-content carrier"
@@ -77,6 +78,10 @@ _FIELD_LINK_APPROVED = "https://approved.example.invalid/dcab-field-hyperlink"
 _FIELD_LINK_CANDIDATE = "https://candidate.example.invalid/dcab-field-hyperlink"
 _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
 _INCLUDE_TEXT_CANDIDATE = "https://candidate.example.invalid/dcab-source.docx"
+_DDE_APPLICATION = "DCAB"
+_DDE_ITEM = "Sheet1!R1C1"
+_DDE_SOURCE_APPROVED = "C:\\DCAB\\approved-source.xlsx"
+_DDE_SOURCE_CANDIDATE = "C:\\DCAB\\candidate-source.xlsx"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
@@ -117,6 +122,7 @@ class DocumentVariant:
     direct_hyperlink_target: str | None = None
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
+    dde_source_file: str | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
@@ -223,6 +229,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="block",
         baseline=DocumentVariant(include_text_target=_INCLUDE_TEXT_APPROVED),
         candidate=DocumentVariant(include_text_target=_INCLUDE_TEXT_CANDIDATE),
+        changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
+        case_id="external.dde_field_source_retargeted",
+        title="DDE field source retargeted",
+        description=(
+            "A complete simple DDE field retains its stored result, application token, and "
+            "item token while its private source-file argument changes."
+        ),
+        fact={
+            "field_kind": "dde",
+            "kind": "external_field_source_changed",
+            "source": "word_field",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(dde_source_file=_DDE_SOURCE_APPROVED),
+        candidate=DocumentVariant(dde_source_file=_DDE_SOURCE_CANDIDATE),
         changed_members=("word/document.xml",),
     ),
     CaseSpec(
@@ -546,6 +569,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("HYPERLINK target cannot be empty")
     if variant.include_text_target is not None and not variant.include_text_target:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
+    if variant.dde_source_file is not None and not variant.dde_source_file:
+        raise FixtureBuildError("DDE source file cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
     if (
@@ -706,6 +731,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.include_text_target is not None
         else _run(_INCLUDE_TEXT_FIELD_RESULT)
     )
+    dde_field_markup = (
+        _simple_field(_dde_field_instruction(variant.dde_source_file), _DDE_FIELD_RESULT)
+        if variant.dde_source_file is not None
+        else ""
+    )
     hidden_properties = "<w:rPr><w:vanish/></w:rPr>" if variant.hidden_text else ""
     hidden_markup = f"<w:r>{hidden_properties}<w:t>{_HIDDEN_TEXT}</w:t></w:r>"
     revision_run = _run(_REVISION_TEXT)
@@ -733,6 +763,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
+        f"{dde_field_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
@@ -750,6 +781,12 @@ def _simple_field(instruction: str, result: str) -> str:
         f'<w:fldSimple w:instr="{html.escape(instruction, quote=True)}">'
         f"{_run(result)}</w:fldSimple>"
     )
+
+
+def _dde_field_instruction(source_file: str) -> str:
+    """Return the fixed-shape, nonexecuting DDE field instruction for a fixture."""
+
+    return f' DDE {_DDE_APPLICATION} "{source_file}" "{_DDE_ITEM}" '
 
 
 def _binding_markup(xpath: str | None) -> str:

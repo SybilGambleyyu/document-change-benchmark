@@ -17,7 +17,7 @@ size_categories:
 
 # Document Change Assurance Benchmark (DCAB)
 
-This dataset mirrors the deterministic fixture corpus from [DCAB v0.6.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.6.0). It contains 17 paired synthetic WordprocessingML cases for static document-change assurance.
+This dataset mirrors the deterministic fixture corpus from [DCAB v0.7.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.7.0). It contains 18 paired synthetic WordprocessingML cases for static document-change assurance.
 
 Each case directory provides a baseline package, candidate package, and target-free `truth.json`. The public truth files describe only a narrow fact category and a reference review convention. They never disclose URI-like targets, field instructions, XPath values, relationship IDs, custom XML values, or opaque payload bytes.
 
@@ -33,11 +33,11 @@ fixtures/
   ...
 ```
 
-The corpus covers direct Word hyperlinks, `HYPERLINK` and `INCLUDETEXT` fields, attached-template and mail-merge data-source settings, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text, tracked insertion markup, Track Changes and document protection settings, content-control/custom-XML bindings, VBA project payload boundaries, and embedded OLE payload boundaries.
+The corpus covers direct Word hyperlinks, `HYPERLINK`, `INCLUDETEXT`, and `DDE` fields, attached-template and mail-merge data-source settings, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text, tracked insertion markup, Track Changes and document protection settings, content-control/custom-XML bindings, VBA project payload boundaries, and embedded OLE payload boundaries.
 
 ## Safety boundary
 
-All URI-like values in packages use `example.invalid`. Macro and OLE bytes are inert synthetic marker data. The corpus is static: use it without resolving a relationship, updating a field, opening a Word client, parsing an opaque payload, activating OLE, or executing code.
+URI-like relationship values in packages use `example.invalid`, and the DDE source is a synthetic local-style string. Macro and OLE bytes are inert synthetic marker data. The corpus is static: use it without resolving a relationship, updating a field, opening a Word client, parsing an opaque payload, activating OLE, or executing code.
 
 ## Reproducibility
 
@@ -52,4 +52,4 @@ This mirror has no special execution requirement. It is provided under the MIT l
 
 ## Scope
 
-DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.6.0/RESEARCH.md) for contract details and limits.
+DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.7.0/RESEARCH.md) for contract details and limits.

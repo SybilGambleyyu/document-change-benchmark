@@ -51,6 +51,7 @@ from .build import (
     FIXTURE_SCHEMA_VERSION,
     CaseSpec,
     DocumentVariant,
+    _dde_field_instruction,
     case_files,
     truth_manifest,
 )
@@ -341,16 +342,17 @@ def _validate_document_xml(
             _invalid(spec, f"{side} linked-picture DrawingML shape is invalid")
 
     fields = list(root.iter(_word_tag("fldSimple")))
-    expected_fields: list[tuple[str, str]] = []
+    expected_field_instructions: list[str] = []
     if variant.hyperlink_field_target is not None:
-        expected_fields.append(("HYPERLINK", variant.hyperlink_field_target))
+        expected_field_instructions.append(f' HYPERLINK "{variant.hyperlink_field_target}" ')
     if variant.include_text_target is not None:
-        expected_fields.append(("INCLUDETEXT", variant.include_text_target))
-    if len(fields) != len(expected_fields):
+        expected_field_instructions.append(f' INCLUDETEXT "{variant.include_text_target}" ')
+    if variant.dde_source_file is not None:
+        expected_field_instructions.append(_dde_field_instruction(variant.dde_source_file))
+    if len(fields) != len(expected_field_instructions):
         _invalid(spec, f"{side} field markup is invalid")
-    for field, (kind, target) in zip(fields, expected_fields, strict=True):
+    for field, expected_instruction in zip(fields, expected_field_instructions, strict=True):
         instruction = field.get(_word_tag("instr"))
-        expected_instruction = f' {kind} "{target}" '
         if instruction != expected_instruction:
             _invalid(spec, f"{side} field instruction is invalid")
 
@@ -584,6 +586,10 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
+        "approved-source.xlsx",
+        "candidate-source.xlsx",
+        "Sheet1!R1C1",
+        "DDE DCAB",
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")

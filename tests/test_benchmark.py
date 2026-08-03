@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 17,
-        "fact_count": 17,
+        "case_count": 18,
+        "fact_count": 18,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 17, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 18, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 32
-    assert loaded_package_count == 34
+    assert loaded_document_count == 34
+    assert loaded_package_count == 36
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -96,6 +96,34 @@ def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> 
     assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
 
 
+def test_dde_field_pair_has_a_fixed_shape_and_one_source_argument_boundary() -> None:
+    """The result, application, and item stay fixed while the source argument changes."""
+
+    case = FIXTURES / "external.dde_field_source_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        baseline_root = ET.fromstring(baseline.read("word/document.xml"))
+        candidate_root = ET.fromstring(candidate.read("word/document.xml"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    instruction_attribute = f"{{{word_namespace}}}instr"
+    fields_before = list(baseline_root.iter(f"{{{word_namespace}}}fldSimple"))
+    fields_after = list(candidate_root.iter(f"{{{word_namespace}}}fldSimple"))
+    assert len(fields_before) == len(fields_after) == 1
+    assert "DDE DCAB" in fields_before[0].get(instruction_attribute, "")
+    assert "DDE DCAB" in fields_after[0].get(instruction_attribute, "")
+    assert "approved-source.xlsx" in fields_before[0].get(instruction_attribute, "")
+    assert "candidate-source.xlsx" in fields_after[0].get(instruction_attribute, "")
+    assert list(fields_before[0].itertext()) == list(fields_after[0].itertext())
+
+
 def test_public_truth_excludes_generated_sensitive_material() -> None:
     forbidden = (
         "example.invalid",
@@ -112,6 +140,10 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
+        "approved-source.xlsx",
+        "candidate-source.xlsx",
+        "Sheet1!R1C1",
+        "DDE DCAB",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

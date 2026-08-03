@@ -165,8 +165,14 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         )
         return observed, _evidence("word_hyperlink_field_inventory_changed")
     if kind == "external_field_source_changed":
+        inventory_field = {
+            "dde": "dde_field_count",
+            "include_text": "include_text_field_count",
+        }.get(fact.get("field_kind"))
+        if inventory_field is None:
+            return False, _evidence("unsupported")
         observed = _has_changes(report, "external_field_inventory_changed") and _same_count(
-            report, "external_fields", "include_text_field_count", 1
+            report, "external_fields", inventory_field, 1
         )
         return observed, _evidence("external_field_inventory_changed")
     if kind == "external_document_dependency_target_changed":
