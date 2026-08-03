@@ -44,6 +44,18 @@ from .build import (
     _STYLES_CONTENT_TYPE,
     _STYLES_RELATIONSHIP,
     _SUBDOCUMENT_RELATIONSHIP,
+    _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
+    _TASKPANE_WEB_EXTENSION_CONTENT_TYPE,
+    _TASKPANE_WEB_EXTENSION_ID,
+    _TASKPANE_WEB_EXTENSION_NS,
+    _TASKPANE_WEB_EXTENSION_REFERENCE_ID,
+    _TASKPANE_WEB_EXTENSION_REFERENCE_STORE,
+    _TASKPANE_WEB_EXTENSION_REFERENCE_STORE_TYPE,
+    _TASKPANE_WEB_EXTENSION_REFERENCE_VERSION,
+    _TASKPANE_WEB_EXTENSION_RELATIONSHIP,
+    _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE,
+    _TASKPANE_WEB_EXTENSION_TASKPANES_NS,
+    _TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP,
     _VBA_PROJECT_CONTENT_TYPE,
     _VBA_PROJECT_RELATIONSHIP,
     _VISIBLE_TEXT,
@@ -158,6 +170,12 @@ def _validate_package(
         expected_members.add("word/embeddings/oleObject1.bin")
     if variant.alternative_format_import_payload is not None:
         expected_members.add("word/afchunk1.html")
+    if variant.taskpane_auto_show is not None:
+        expected_members |= {
+            "word/webextensions/taskpanes.xml",
+            "word/webextensions/_rels/taskpanes.xml.rels",
+            "word/webextensions/webextension1.xml",
+        }
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
@@ -170,6 +188,7 @@ def _validate_package(
     _validate_root_relationships(members, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
+    _validate_taskpane_web_extension(members, variant, spec, side)
     _validate_alternative_format_import(members, variant, spec, side)
     _validate_settings(members, variant, spec, side)
     _validate_settings_relationships(members, variant, spec, side)
@@ -225,6 +244,13 @@ def _validate_content_types(
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
         expected["/word/embeddings/oleObject1.bin"] = _OLE_CONTENT_TYPE
+    if variant.taskpane_auto_show is not None:
+        expected.update(
+            {
+                "/word/webextensions/taskpanes.xml": _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE,
+                "/word/webextensions/webextension1.xml": _TASKPANE_WEB_EXTENSION_CONTENT_TYPE,
+            }
+        )
     if overrides != expected:
         _invalid(spec, f"{side} content type overrides are invalid")
     if defaults != {
@@ -288,6 +314,12 @@ def _validate_document_relationships(
         expected["rIdOleObject"] = (
             _OLE_OBJECT_RELATIONSHIP,
             "embeddings/oleObject1.bin",
+            "internal",
+        )
+    if variant.taskpane_auto_show is not None:
+        expected["rIdTaskpaneWebExtensions"] = (
+            _TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP,
+            "webextensions/taskpanes.xml",
             "internal",
         )
     if actual != expected:
@@ -448,6 +480,112 @@ def _validate_document_xml(
         _invalid(spec, f"{side} embedded OLE marker is invalid")
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
+
+
+def _validate_taskpane_web_extension(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate the fixed, internal-only task-pane web-extension topology."""
+
+    if variant.taskpane_auto_show is None:
+        return
+
+    taskpanes = _parse_xml(members["word/webextensions/taskpanes.xml"], spec)
+    if (
+        taskpanes.tag != f"{{{_TASKPANE_WEB_EXTENSION_TASKPANES_NS}}}taskpanes"
+        or taskpanes.attrib
+        or len(taskpanes) != 1
+        or (taskpanes.text or "").strip()
+    ):
+        _invalid(spec, f"{side} task-pane web-extension root is invalid")
+    taskpane = taskpanes[0]
+    expected_taskpane_attributes = {
+        "dockstate": "right",
+        "visibility": "0",
+        "width": "350",
+        "row": "0",
+        "locked": "false",
+    }
+    if (
+        taskpane.tag != f"{{{_TASKPANE_WEB_EXTENSION_TASKPANES_NS}}}taskpane"
+        or taskpane.attrib != expected_taskpane_attributes
+        or len(taskpane) != 1
+        or (taskpane.text or "").strip()
+        or (taskpane.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} task-pane web-extension markup is invalid")
+    reference = taskpane[0]
+    if not _is_empty_element(
+        reference,
+        f"{{{_TASKPANE_WEB_EXTENSION_TASKPANES_NS}}}webextensionref",
+        {f"{{{_REL_NS}}}id": "rIdTaskpaneWebExtension"},
+    ):
+        _invalid(spec, f"{side} task-pane web-extension reference is invalid")
+
+    if _relationship_map(members["word/webextensions/_rels/taskpanes.xml.rels"], spec) != {
+        "rIdTaskpaneWebExtension": (
+            _TASKPANE_WEB_EXTENSION_RELATIONSHIP,
+            "webextension1.xml",
+            "internal",
+        )
+    }:
+        _invalid(spec, f"{side} task-pane web-extension relationships are invalid")
+
+    extension = _parse_xml(members["word/webextensions/webextension1.xml"], spec)
+    expected_tags = (
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}reference",
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}alternateReferences",
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}properties",
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}bindings",
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}snapshot",
+    )
+    if (
+        extension.tag != f"{{{_TASKPANE_WEB_EXTENSION_NS}}}webextension"
+        or extension.attrib != {"id": _TASKPANE_WEB_EXTENSION_ID}
+        or tuple(child.tag for child in extension) != expected_tags
+        or (extension.text or "").strip()
+    ):
+        _invalid(spec, f"{side} web-extension root is invalid")
+    extension_reference, alternate_references, properties, bindings, snapshot = extension
+    if not _is_empty_element(
+        extension_reference,
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}reference",
+        {
+            "id": _TASKPANE_WEB_EXTENSION_REFERENCE_ID,
+            "version": _TASKPANE_WEB_EXTENSION_REFERENCE_VERSION,
+            "store": _TASKPANE_WEB_EXTENSION_REFERENCE_STORE,
+            "storeType": _TASKPANE_WEB_EXTENSION_REFERENCE_STORE_TYPE,
+        },
+    ):
+        _invalid(spec, f"{side} web-extension reference is invalid")
+    if not _is_empty_element(
+        alternate_references,
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}alternateReferences",
+        {},
+    ):
+        _invalid(spec, f"{side} web-extension alternate references are invalid")
+    if (
+        properties.tag != f"{{{_TASKPANE_WEB_EXTENSION_NS}}}properties"
+        or properties.attrib
+        or len(properties) != 1
+        or (properties.text or "").strip()
+        or (properties.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} web-extension properties are invalid")
+    expected_auto_show_value = "true" if variant.taskpane_auto_show else "false"
+    if not _is_empty_element(
+        properties[0],
+        f"{{{_TASKPANE_WEB_EXTENSION_NS}}}property",
+        {
+            "name": _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
+            "value": expected_auto_show_value,
+        },
+    ):
+        _invalid(spec, f"{side} web-extension auto-show setting is invalid")
+    if not _is_empty_element(bindings, f"{{{_TASKPANE_WEB_EXTENSION_NS}}}bindings", {}):
+        _invalid(spec, f"{side} web-extension bindings are invalid")
+    if not _is_empty_element(snapshot, f"{{{_TASKPANE_WEB_EXTENSION_NS}}}snapshot", {}):
+        _invalid(spec, f"{side} web-extension snapshot is invalid")
 
 
 def _validate_alternative_format_import(
@@ -673,6 +811,13 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "DCABReviewState",
         "approved-state",
         "candidate-state",
+        "rIdTaskpaneWebExtensions",
+        "rIdTaskpaneWebExtension",
+        "webextension1.xml",
+        _TASKPANE_WEB_EXTENSION_ID,
+        _TASKPANE_WEB_EXTENSION_REFERENCE_ID,
+        _TASKPANE_WEB_EXTENSION_REFERENCE_STORE,
+        _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")
@@ -686,6 +831,16 @@ def _parse_xml(data: bytes, spec: CaseSpec) -> ET.Element:
     except (ET.ParseError, UnicodeError, ValueError):
         _invalid(spec, "XML cannot be parsed")
     raise AssertionError("unreachable")
+
+
+def _is_empty_element(element: ET.Element, tag: str, attributes: dict[str, str]) -> bool:
+    return (
+        element.tag == tag
+        and element.attrib == attributes
+        and not list(element)
+        and not (element.text or "").strip()
+        and not (element.tail or "").strip()
+    )
 
 
 def _run_has_vanish(run: ET.Element) -> bool:

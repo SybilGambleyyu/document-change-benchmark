@@ -321,6 +321,48 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("word_permission_range_inventory_changed")
+    if kind == "taskpane_auto_show_setting_enabled":
+        observed = _has_changes(report, "taskpane_web_extension_inventory_changed") and all(
+            (
+                _same_count(report, "taskpane_web_extensions", "taskpane_part_count", 1),
+                _same_count(report, "taskpane_web_extensions", "taskpane_count", 1),
+                _same_count(report, "taskpane_web_extensions", "visible_taskpane_count", 0),
+                _same_count(report, "taskpane_web_extensions", "locked_taskpane_count", 0),
+                _same_count(report, "taskpane_web_extensions", "web_extension_part_count", 1),
+                _same_count(
+                    report,
+                    "taskpane_web_extensions",
+                    "web_extension_reference_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "taskpane_web_extensions",
+                    "web_extension_property_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "taskpane_web_extensions",
+                    "web_extension_binding_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "taskpane_web_extensions",
+                    "web_extension_bound_content_control_count",
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "taskpane_web_extensions",
+                    "auto_show_taskpane_setting_count",
+                    0,
+                    1,
+                ),
+            )
+        )
+        return observed, _evidence("taskpane_web_extension_inventory_changed")
     if kind == "document_variable_value_changed":
         observed = _has_changes(report, "word_document_variable_inventory_changed") and all(
             (

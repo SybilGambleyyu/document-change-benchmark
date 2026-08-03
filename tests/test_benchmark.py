@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 20,
-        "fact_count": 20,
+        "case_count": 21,
+        "fact_count": 21,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 20, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 21, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 38
-    assert loaded_package_count == 40
+    assert loaded_document_count == 40
+    assert loaded_package_count == 42
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -214,6 +214,115 @@ def test_permission_range_pair_has_a_fixed_boundary_and_one_editor_change() -> N
     ]
 
 
+def test_taskpane_auto_show_pair_has_fixed_internal_parts_and_one_value_boundary() -> None:
+    """Only the stored auto-show property value changes in a fixed add-in topology."""
+
+    case = FIXTURES / "interaction.taskpane_auto_show_setting_enabled"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/webextensions/webextension1.xml"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        baseline_taskpanes = baseline.read("word/webextensions/taskpanes.xml")
+        candidate_taskpanes = candidate.read("word/webextensions/taskpanes.xml")
+        baseline_relationships = baseline.read("word/webextensions/_rels/taskpanes.xml.rels")
+        candidate_relationships = candidate.read("word/webextensions/_rels/taskpanes.xml.rels")
+        baseline_extension = baseline.read("word/webextensions/webextension1.xml")
+        candidate_extension = candidate.read("word/webextensions/webextension1.xml")
+
+    assert baseline_taskpanes == candidate_taskpanes
+    assert baseline_relationships == candidate_relationships
+    assert candidate_extension.replace(b'value="true"', b'value="false"', 1) == baseline_extension
+
+    taskpane_namespace = "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11"
+    web_extension_namespace = (
+        "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
+    )
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    taskpanes = ET.fromstring(baseline_taskpanes)
+    assert taskpanes.tag == f"{{{taskpane_namespace}}}taskpanes"
+    assert len(taskpanes) == 1
+    taskpane = taskpanes[0]
+    assert taskpane.tag == f"{{{taskpane_namespace}}}taskpane"
+    assert taskpane.attrib == {
+        "dockstate": "right",
+        "visibility": "0",
+        "width": "350",
+        "row": "0",
+        "locked": "false",
+    }
+    assert len(taskpane) == 1
+    reference = taskpane[0]
+    assert reference.tag == f"{{{taskpane_namespace}}}webextensionref"
+    assert reference.attrib == {f"{{{relationship_namespace}}}id": "rIdTaskpaneWebExtension"}
+
+    relationships = ET.fromstring(baseline_relationships)
+    assert relationships.tag == f"{{{package_relationship_namespace}}}Relationships"
+    assert len(relationships) == 1
+    relationship = relationships[0]
+    assert relationship.attrib == {
+        "Id": "rIdTaskpaneWebExtension",
+        "Type": "http://schemas.microsoft.com/office/2011/relationships/webextension",
+        "Target": "webextension1.xml",
+    }
+
+    baseline_root = ET.fromstring(baseline_extension)
+    candidate_root = ET.fromstring(candidate_extension)
+    expected_children = [
+        "reference",
+        "alternateReferences",
+        "properties",
+        "bindings",
+        "snapshot",
+    ]
+    assert baseline_root.tag == candidate_root.tag == f"{{{web_extension_namespace}}}webextension"
+    assert (
+        baseline_root.attrib
+        == candidate_root.attrib
+        == {"id": "{3F08C2A1-681F-451E-95B6-001122334455}"}
+    )
+    assert [child.tag for child in baseline_root] == [
+        f"{{{web_extension_namespace}}}{name}" for name in expected_children
+    ]
+    assert [child.tag for child in candidate_root] == [
+        f"{{{web_extension_namespace}}}{name}" for name in expected_children
+    ]
+    assert (
+        baseline_root[0].attrib
+        == candidate_root[0].attrib
+        == {
+            "id": "{F928A11C-9164-4F8A-8D92-556677889900}",
+            "version": "1.0.0.0",
+            "store": "EXCatalog",
+            "storeType": "EXCatalog",
+        }
+    )
+    assert len(baseline_root[0]) == len(candidate_root[0]) == 0
+    assert len(baseline_root[1]) == len(candidate_root[1]) == 0
+    assert len(baseline_root[3]) == len(candidate_root[3]) == 0
+    assert len(baseline_root[4]) == len(candidate_root[4]) == 0
+    assert len(baseline_root[2]) == len(candidate_root[2]) == 1
+    baseline_property = baseline_root[2][0]
+    candidate_property = candidate_root[2][0]
+    assert (
+        baseline_property.tag == candidate_property.tag == f"{{{web_extension_namespace}}}property"
+    )
+    assert baseline_property.attrib == {
+        "name": "Office.AutoShowTaskpaneWithDocument",
+        "value": "false",
+    }
+    assert candidate_property.attrib == {
+        "name": "Office.AutoShowTaskpaneWithDocument",
+        "value": "true",
+    }
+
+
 def test_public_truth_excludes_generated_sensitive_material() -> None:
     forbidden = (
         "example.invalid",
@@ -240,6 +349,13 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "DCAB_EDITOR_BASELINE",
         "DCAB_EDITOR_CANDIDATE",
         "DCAB editable-range carrier",
+        "rIdTaskpaneWebExtensions",
+        "rIdTaskpaneWebExtension",
+        "webextension1.xml",
+        "{3F08C2A1-681F-451E-95B6-001122334455}",
+        "{F928A11C-9164-4F8A-8D92-556677889900}",
+        "EXCatalog",
+        "Office.AutoShowTaskpaneWithDocument",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

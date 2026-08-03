@@ -32,6 +32,12 @@ _PICTURE_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 _OFFICE_VML_NS = "urn:schemas-microsoft-com:office:office"
 _VML_NS = "urn:schemas-microsoft-com:vml"
 _CUSTOM_XML_PROPERTIES_NS = "http://schemas.openxmlformats.org/officeDocument/2006/customXml"
+_TASKPANE_WEB_EXTENSION_TASKPANES_NS = (
+    "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11"
+)
+_TASKPANE_WEB_EXTENSION_NS = (
+    "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
+)
 
 _DOCX_MAIN_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
@@ -47,6 +53,10 @@ _CUSTOM_XML_PROPERTIES_CONTENT_TYPE = (
 _ALT_CHUNK_CONTENT_TYPE = "text/html"
 _VBA_PROJECT_CONTENT_TYPE = "application/vnd.ms-office.vbaProject"
 _OLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.oleObject"
+_TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE = (
+    "application/vnd.ms-office.webextensiontaskpanes+xml"
+)
+_TASKPANE_WEB_EXTENSION_CONTENT_TYPE = "application/vnd.ms-office.webextension+xml"
 
 _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
 _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
@@ -61,6 +71,12 @@ _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
 _VBA_PROJECT_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 _OLE_OBJECT_RELATIONSHIP = f"{_REL_NS}/oleObject"
+_TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP = (
+    "http://schemas.microsoft.com/office/2011/relationships/webextensiontaskpanes"
+)
+_TASKPANE_WEB_EXTENSION_RELATIONSHIP = (
+    "http://schemas.microsoft.com/office/2011/relationships/webextension"
+)
 
 _VISIBLE_TEXT = "DCAB synthetic static-review fixture"
 _HYPERLINK_DISPLAY_TEXT = "DCAB hyperlink display text"
@@ -90,6 +106,12 @@ _DOCUMENT_VARIABLE_CANDIDATE = "candidate-state"
 _PERMISSION_RANGE_MARKER_ID = "0"
 _PERMISSION_RANGE_EDITOR_APPROVED = "DCAB_EDITOR_BASELINE"
 _PERMISSION_RANGE_EDITOR_CANDIDATE = "DCAB_EDITOR_CANDIDATE"
+_TASKPANE_WEB_EXTENSION_ID = "{3F08C2A1-681F-451E-95B6-001122334455}"
+_TASKPANE_WEB_EXTENSION_REFERENCE_ID = "{F928A11C-9164-4F8A-8D92-556677889900}"
+_TASKPANE_WEB_EXTENSION_REFERENCE_VERSION = "1.0.0.0"
+_TASKPANE_WEB_EXTENSION_REFERENCE_STORE = "EXCatalog"
+_TASKPANE_WEB_EXTENSION_REFERENCE_STORE_TYPE = "EXCatalog"
+_TASKPANE_AUTO_SHOW_PROPERTY_NAME = "Office.AutoShowTaskpaneWithDocument"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
@@ -133,6 +155,7 @@ class DocumentVariant:
     dde_source_file: str | None = None
     document_variable_value: str | None = None
     permission_range_editor: str | None = None
+    taskpane_auto_show: bool | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
@@ -223,6 +246,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(hyperlink_field_target=_FIELD_LINK_APPROVED),
         candidate=DocumentVariant(hyperlink_field_target=_FIELD_LINK_CANDIDATE),
         changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
+        case_id="interaction.taskpane_auto_show_setting_enabled",
+        title="Task-pane auto-show setting enabled",
+        description=(
+            "An internally linked Office web-extension task pane retains its parts, "
+            "reference, and property shape while its stored auto-show setting changes "
+            "from false to true."
+        ),
+        fact={
+            "kind": "taskpane_auto_show_setting_enabled",
+            "source": "office_web_extension",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(taskpane_auto_show=False),
+        candidate=DocumentVariant(taskpane_auto_show=True),
+        changed_members=("word/webextensions/webextension1.xml",),
     ),
     CaseSpec(
         case_id="external.include_text_field_target_retargeted",
@@ -560,6 +600,18 @@ def render_package(variant: DocumentVariant) -> bytes:
         members["word/vbaProject.bin"] = variant.macro_payload
     if variant.embedded_payload is not None:
         members["word/embeddings/oleObject1.bin"] = variant.embedded_payload
+    if variant.taskpane_auto_show is not None:
+        members.update(
+            {
+                "word/webextensions/taskpanes.xml": _taskpane_web_extension_taskpanes(),
+                "word/webextensions/_rels/taskpanes.xml.rels": (
+                    _taskpane_web_extension_relationships()
+                ),
+                "word/webextensions/webextension1.xml": _taskpane_web_extension(
+                    variant.taskpane_auto_show
+                ),
+            }
+        )
     return _zip_members(members)
 
 
@@ -618,6 +670,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("document-variable value cannot be empty")
     if variant.permission_range_editor is not None and not variant.permission_range_editor:
         raise FixtureBuildError("permission-range editor cannot be empty")
+    if variant.taskpane_auto_show is not None and not isinstance(variant.taskpane_auto_show, bool):
+        raise FixtureBuildError("task-pane auto-show setting must be boolean")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
     if (
@@ -680,6 +734,19 @@ def _content_types(variant: DocumentVariant) -> bytes:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
         overrides.append(("/word/embeddings/oleObject1.bin", _OLE_CONTENT_TYPE))
+    if variant.taskpane_auto_show is not None:
+        overrides.extend(
+            (
+                (
+                    "/word/webextensions/taskpanes.xml",
+                    _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE,
+                ),
+                (
+                    "/word/webextensions/webextension1.xml",
+                    _TASKPANE_WEB_EXTENSION_CONTENT_TYPE,
+                ),
+            )
+        )
     values = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         f'<Types xmlns="{_CONTENT_TYPES_NS}">',
@@ -740,6 +807,15 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
         relationships.append(
             ("rIdOleObject", _OLE_OBJECT_RELATIONSHIP, "embeddings/oleObject1.bin", "Internal")
         )
+    if variant.taskpane_auto_show is not None:
+        relationships.append(
+            (
+                "rIdTaskpaneWebExtensions",
+                _TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP,
+                "webextensions/taskpanes.xml",
+                "Internal",
+            )
+        )
     values = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         f'<Relationships xmlns="{_PACKAGE_REL_NS}">',
@@ -753,6 +829,52 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
         )
     values.append("</Relationships>")
     return "".join(values).encode("utf-8")
+
+
+def _taskpane_web_extension_taskpanes() -> bytes:
+    """Return one internal-only, invisible task-pane declaration."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<wetp:taskpanes xmlns:wetp="{_TASKPANE_WEB_EXTENSION_TASKPANES_NS}" '
+        f'xmlns:r="{_REL_NS}">'
+        '<wetp:taskpane dockstate="right" visibility="0" width="350" row="0" locked="false">'
+        '<wetp:webextensionref r:id="rIdTaskpaneWebExtension"/>'
+        "</wetp:taskpane></wetp:taskpanes>"
+    ).encode()
+
+
+def _taskpane_web_extension_relationships() -> bytes:
+    """Return the internal task-pane-to-web-extension relationship."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
+        '<Relationship Id="rIdTaskpaneWebExtension" '
+        f'Type="{_TASKPANE_WEB_EXTENSION_RELATIONSHIP}" '
+        'Target="webextension1.xml"/>'
+        "</Relationships>"
+    ).encode()
+
+
+def _taskpane_web_extension(auto_show: bool) -> bytes:
+    """Return a complete Office web-extension part without executable content."""
+
+    value = "true" if auto_show else "false"
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<we:webextension xmlns:we="{_TASKPANE_WEB_EXTENSION_NS}" '
+        f'id="{_TASKPANE_WEB_EXTENSION_ID}">'
+        f'<we:reference id="{_TASKPANE_WEB_EXTENSION_REFERENCE_ID}" '
+        f'version="{_TASKPANE_WEB_EXTENSION_REFERENCE_VERSION}" '
+        f'store="{_TASKPANE_WEB_EXTENSION_REFERENCE_STORE}" '
+        f'storeType="{_TASKPANE_WEB_EXTENSION_REFERENCE_STORE_TYPE}"/>'
+        "<we:alternateReferences/><we:properties>"
+        f'<we:property name="{_TASKPANE_AUTO_SHOW_PROPERTY_NAME}" value="{value}"/>'
+        "</we:properties><we:bindings/>"
+        f'<we:snapshot xmlns:r="{_REL_NS}"/>'
+        "</we:webextension>"
+    ).encode()
 
 
 def _document_xml(variant: DocumentVariant) -> bytes:
