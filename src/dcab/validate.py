@@ -15,6 +15,12 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from .build import (
+    _ACTIVE_X_BINARY_CONTENT_TYPE,
+    _ACTIVE_X_BINARY_RELATIONSHIP,
+    _ACTIVE_X_CLASS_ID,
+    _ACTIVE_X_CONTENT_TYPE,
+    _ACTIVE_X_CONTROL_NAME,
+    _ACTIVE_X_NS,
     _ALT_CHUNK_CONTENT_TYPE,
     _ALT_CHUNK_RELATIONSHIP,
     _ATTACHED_TEMPLATE_RELATIONSHIP,
@@ -23,6 +29,7 @@ from .build import (
     _COMMENTS_EXTENDED_RELATIONSHIP,
     _COMMENTS_RELATIONSHIP,
     _CONTENT_TYPES_NS,
+    _CONTROL_RELATIONSHIP,
     _CUSTOM_XML_PROPERTIES_CONTENT_TYPE,
     _CUSTOM_XML_PROPERTIES_NS,
     _CUSTOM_XML_PROPERTIES_RELATIONSHIP,
@@ -199,6 +206,12 @@ def _validate_package(
         expected_members.add("word/vbaProject.bin")
     if variant.embedded_payload is not None:
         expected_members.add("word/embeddings/oleObject1.bin")
+    if variant.activex_persistence_payload is not None:
+        expected_members |= {
+            "word/activeX/activeX1.xml",
+            "word/activeX/_rels/activeX1.xml.rels",
+            "word/activeX/activeX1.bin",
+        }
     if variant.modern_comment_done is not None:
         expected_members |= {"word/comments.xml", "word/commentsExtended.xml"}
     if variant.alternative_format_import_payload is not None:
@@ -223,6 +236,7 @@ def _validate_package(
     _validate_root_relationships(members, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
+    _validate_active_x_control(members, variant, spec, side)
     _validate_modern_comment(members, variant, spec, side)
     _validate_taskpane_web_extension(members, variant, spec, side)
     _validate_alternative_format_import(members, variant, spec, side)
@@ -241,6 +255,11 @@ def _validate_package(
         and members["word/embeddings/oleObject1.bin"] != variant.embedded_payload
     ):
         _invalid(spec, f"{side} embedded OLE payload is invalid")
+    if (
+        variant.activex_persistence_payload is not None
+        and members["word/activeX/activeX1.bin"] != variant.activex_persistence_payload
+    ):
+        _invalid(spec, f"{side} ActiveX persistence payload is invalid")
 
 
 def _validate_content_types(
@@ -281,6 +300,13 @@ def _validate_content_types(
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
         expected["/word/embeddings/oleObject1.bin"] = _OLE_CONTENT_TYPE
+    if variant.activex_persistence_payload is not None:
+        expected.update(
+            {
+                "/word/activeX/activeX1.xml": _ACTIVE_X_CONTENT_TYPE,
+                "/word/activeX/activeX1.bin": _ACTIVE_X_BINARY_CONTENT_TYPE,
+            }
+        )
     if variant.frameset_source_target is not None:
         expected["/word/webSettings.xml"] = _WEB_SETTINGS_CONTENT_TYPE
     if variant.modern_comment_done is not None:
@@ -372,6 +398,12 @@ def _validate_document_relationships(
         expected["rIdOleObject"] = (
             _OLE_OBJECT_RELATIONSHIP,
             "embeddings/oleObject1.bin",
+            "internal",
+        )
+    if variant.activex_persistence_payload is not None:
+        expected["rIdActiveXControl"] = (
+            _CONTROL_RELATIONSHIP,
+            "activeX/activeX1.xml",
             "internal",
         )
     if variant.modern_comment_done is not None:
@@ -644,6 +676,47 @@ def _validate_document_xml(
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
 
+    active_x_controls = list(root.iter(_word_tag("control")))
+    if len(active_x_controls) != int(variant.activex_persistence_payload is not None):
+        _invalid(spec, f"{side} ActiveX embedded-control markup is invalid")
+    if active_x_controls:
+        active_x_control = active_x_controls[0]
+        active_x_containers = [
+            element for element in root.iter(_word_tag("object")) if active_x_control in element
+        ]
+        active_x_runs = [
+            element
+            for element in root.iter(_word_tag("r"))
+            if active_x_containers and active_x_containers[0] in element
+        ]
+        expected_control_attributes = {
+            f"{{{_REL_NS}}}id": "rIdActiveXControl",
+            _word_tag("name"): _ACTIVE_X_CONTROL_NAME,
+        }
+        if (
+            len(active_x_containers) != 1
+            or len(active_x_runs) != 1
+            or active_x_runs[0].attrib
+            or len(active_x_runs[0]) != 1
+            or active_x_runs[0][0] is not active_x_containers[0]
+            or (active_x_runs[0].text or "").strip()
+            or (active_x_runs[0].tail or "").strip()
+        ):
+            _invalid(spec, f"{side} ActiveX embedded-control markup is invalid")
+        active_x_container = active_x_containers[0]
+        if (
+            active_x_container.attrib
+            or len(active_x_container) != 1
+            or active_x_container[0] is not active_x_control
+            or (active_x_container.text or "").strip()
+            or (active_x_container.tail or "").strip()
+            or active_x_control.attrib != expected_control_attributes
+            or list(active_x_control)
+            or (active_x_control.text or "").strip()
+            or (active_x_control.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} ActiveX embedded-control markup is invalid")
+
     linked_ole_markers = [
         element
         for element in root.iter()
@@ -707,6 +780,38 @@ def _validate_document_xml(
             or (marker.tail or "").strip()
         ):
             _invalid(spec, f"{side} VML linked-OLE marker is invalid")
+
+
+def _validate_active_x_control(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate the fixed ActiveX persistence topology without loading its binary."""
+
+    if variant.activex_persistence_payload is None:
+        return
+    root = _parse_xml(members["word/activeX/activeX1.xml"], spec)
+    expected_attributes = {
+        f"{{{_ACTIVE_X_NS}}}classid": _ACTIVE_X_CLASS_ID,
+        f"{{{_ACTIVE_X_NS}}}persistence": "persistStorage",
+        f"{{{_REL_NS}}}id": "rIdActiveXBinary",
+    }
+    if (
+        root.tag != f"{{{_ACTIVE_X_NS}}}ocx"
+        or root.attrib != expected_attributes
+        or list(root)
+        or (root.text or "").strip()
+        or (root.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} ActiveX persistence part is invalid")
+    relationships = _relationship_map(members["word/activeX/_rels/activeX1.xml.rels"], spec)
+    if relationships != {
+        "rIdActiveXBinary": (
+            _ACTIVE_X_BINARY_RELATIONSHIP,
+            "activeX1.bin",
+            "internal",
+        )
+    }:
+        _invalid(spec, f"{side} ActiveX persistence relationship is invalid")
 
 
 def _validate_complex_include_text_field(
@@ -1219,8 +1324,12 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "rIdAltChunk",
         "rIdVbaProject",
         "rIdOleObject",
+        "rIdActiveXControl",
+        "rIdActiveXBinary",
         "vbaProject.bin",
         "oleObject1.bin",
+        "activeX1.xml",
+        "activeX1.bin",
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
@@ -1255,6 +1364,8 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         _MODERN_COMMENT_DATE,
         _MODERN_COMMENT_ANCHOR_TEXT,
         _MODERN_COMMENT_TEXT,
+        _ACTIVE_X_CONTROL_NAME,
+        _ACTIVE_X_CLASS_ID,
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")

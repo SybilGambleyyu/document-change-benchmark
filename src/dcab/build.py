@@ -1,10 +1,10 @@
 """Deterministic source for DCAB's synthetic WordprocessingML fixture pairs.
 
 DCAB builds compact OPC packages rather than redistributing real documents.
-Stored URI-like values use the reserved ``example.invalid`` domain, and VBA
-and OLE payloads are inert marker bytes. Building a fixture never opens a Word
-client, resolves a relationship, updates a field, parses an opaque payload, or
-executes stored code.
+Stored URI-like values use the reserved ``example.invalid`` domain, and VBA,
+OLE, and ActiveX persistence payloads are inert marker bytes. Building a
+fixture never opens a Word client, resolves a relationship, updates a field,
+parses an opaque payload, or executes stored code.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ _WORDPROCESSING_DRAWING_NS = (
 _PICTURE_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 _OFFICE_VML_NS = "urn:schemas-microsoft-com:office:office"
 _VML_NS = "urn:schemas-microsoft-com:vml"
+_ACTIVE_X_NS = "http://schemas.microsoft.com/office/2006/activeX"
 _CUSTOM_XML_PROPERTIES_NS = "http://schemas.openxmlformats.org/officeDocument/2006/customXml"
 _TASKPANE_WEB_EXTENSION_TASKPANES_NS = (
     "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11"
@@ -64,6 +65,8 @@ _CUSTOM_XML_PROPERTIES_CONTENT_TYPE = (
 _ALT_CHUNK_CONTENT_TYPE = "text/html"
 _VBA_PROJECT_CONTENT_TYPE = "application/vnd.ms-office.vbaProject"
 _OLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.oleObject"
+_ACTIVE_X_CONTENT_TYPE = "application/vnd.ms-office.activeX+xml"
+_ACTIVE_X_BINARY_CONTENT_TYPE = "application/vnd.ms-office.activeX"
 _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE = (
     "application/vnd.ms-office.webextensiontaskpanes+xml"
 )
@@ -88,6 +91,10 @@ _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
 _VBA_PROJECT_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
 _OLE_OBJECT_RELATIONSHIP = f"{_REL_NS}/oleObject"
+_CONTROL_RELATIONSHIP = f"{_REL_NS}/control"
+_ACTIVE_X_BINARY_RELATIONSHIP = (
+    "http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary"
+)
 _TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP = (
     "http://schemas.microsoft.com/office/2011/relationships/webextensiontaskpanes"
 )
@@ -178,6 +185,10 @@ _OPAQUE_MACRO_APPROVED = b"DCAB inert synthetic VBA marker payload: approved\n"
 _OPAQUE_MACRO_CANDIDATE = b"DCAB inert synthetic VBA marker payload: candidate\n"
 _OPAQUE_OLE_APPROVED = b"DCAB inert synthetic OLE marker payload: approved\n"
 _OPAQUE_OLE_CANDIDATE = b"DCAB inert synthetic OLE marker payload: candidate\n"
+_ACTIVE_X_CONTROL_NAME = "DCABActiveXControl"
+_ACTIVE_X_CLASS_ID = "{11111111-2222-3333-4444-555555555555}"
+_OPAQUE_ACTIVE_X_APPROVED = b"DCAB inert synthetic ActiveX marker payload: approved\n"
+_OPAQUE_ACTIVE_X_CANDIDATE = b"DCAB inert synthetic ActiveX marker payload: candidate\n"
 
 
 class FixtureBuildError(ValueError):
@@ -214,6 +225,7 @@ class DocumentVariant:
     custom_xml_payload: bytes | None = None
     macro_payload: bytes | None = None
     embedded_payload: bytes | None = None
+    activex_persistence_payload: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -663,6 +675,22 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         candidate=DocumentVariant(embedded_payload=_OPAQUE_OLE_CANDIDATE),
         changed_members=("word/embeddings/oleObject1.bin",),
     ),
+    CaseSpec(
+        case_id="embedded.activex_control_persistence_payload_changed",
+        title="ActiveX control persistence payload changed",
+        description=(
+            "A fixed w:control anchor, ActiveX persistence part, and internal binary "
+            "relationship retain their topology while inert synthetic persistence bytes change."
+        ),
+        fact={
+            "kind": "activex_control_persistence_payload_changed",
+            "source": "word_embedded_control",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(activex_persistence_payload=_OPAQUE_ACTIVE_X_APPROVED),
+        candidate=DocumentVariant(activex_persistence_payload=_OPAQUE_ACTIVE_X_CANDIDATE),
+        changed_members=("word/activeX/activeX1.bin",),
+    ),
 )
 
 CASE_IDS = tuple(spec.case_id for spec in CASE_SPECS)
@@ -738,6 +766,14 @@ def render_package(variant: DocumentVariant) -> bytes:
         members["word/vbaProject.bin"] = variant.macro_payload
     if variant.embedded_payload is not None:
         members["word/embeddings/oleObject1.bin"] = variant.embedded_payload
+    if variant.activex_persistence_payload is not None:
+        members.update(
+            {
+                "word/activeX/activeX1.xml": _active_x_control_xml(),
+                "word/activeX/_rels/activeX1.xml.rels": _active_x_control_relationships(),
+                "word/activeX/activeX1.bin": variant.activex_persistence_payload,
+            }
+        )
     if variant.modern_comment_done is not None:
         members.update(
             {
@@ -850,6 +886,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         and not variant.drawing_linked_picture_target
     ):
         raise FixtureBuildError("linked-picture target cannot be empty")
+    if variant.activex_persistence_payload is not None and not variant.activex_persistence_payload:
+        raise FixtureBuildError("ActiveX persistence payload cannot be empty")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -893,6 +931,13 @@ def _content_types(variant: DocumentVariant) -> bytes:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
         overrides.append(("/word/embeddings/oleObject1.bin", _OLE_CONTENT_TYPE))
+    if variant.activex_persistence_payload is not None:
+        overrides.extend(
+            (
+                ("/word/activeX/activeX1.xml", _ACTIVE_X_CONTENT_TYPE),
+                ("/word/activeX/activeX1.bin", _ACTIVE_X_BINARY_CONTENT_TYPE),
+            )
+        )
     if variant.frameset_source_target is not None:
         overrides.append(("/word/webSettings.xml", _WEB_SETTINGS_CONTENT_TYPE))
     if variant.modern_comment_done is not None:
@@ -987,6 +1032,10 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
     if variant.embedded_payload is not None:
         relationships.append(
             ("rIdOleObject", _OLE_OBJECT_RELATIONSHIP, "embeddings/oleObject1.bin", "Internal")
+        )
+    if variant.activex_persistence_payload is not None:
+        relationships.append(
+            ("rIdActiveXControl", _CONTROL_RELATIONSHIP, "activeX/activeX1.xml", "Internal")
         )
     if variant.modern_comment_done is not None:
         relationships.extend(
@@ -1129,6 +1178,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     )
     binding_markup = _binding_markup(variant.data_binding_xpath)
     ole_markup = _ole_markup() if variant.embedded_payload is not None else ""
+    active_x_markup = _active_x_markup() if variant.activex_persistence_payload is not None else ""
     linked_ole_markup = _linked_ole_markup() if variant.vml_linked_ole_target is not None else ""
     linked_picture_markup = (
         _linked_picture_markup() if variant.drawing_linked_picture_target is not None else ""
@@ -1150,7 +1200,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
         f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}{binding_markup}"
-        f"{ole_markup}{linked_ole_markup}{linked_picture_markup}"
+        f"{ole_markup}{active_x_markup}{linked_ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
@@ -1287,6 +1337,38 @@ def _ole_markup() -> str:
         'style="width:0;height:0"><o:OLEObject Type="Embed" ProgID="DCAB.Synthetic" '
         'r:id="rIdOleObject"/></v:shape></w:object></w:r>'
     )
+
+
+def _active_x_markup() -> str:
+    """Return a fixed inline Word embedded-control anchor."""
+
+    return (
+        '<w:r><w:object><w:control r:id="rIdActiveXControl" '
+        f'w:name="{_ACTIVE_X_CONTROL_NAME}"/></w:object></w:r>'
+    )
+
+
+def _active_x_control_xml() -> bytes:
+    """Return a fixed ActiveX persistence XML part with one binary reference."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<ax:ocx xmlns:ax="{_ACTIVE_X_NS}" xmlns:r="{_REL_NS}" '
+        f'ax:classid="{_ACTIVE_X_CLASS_ID}" ax:persistence="persistStorage" '
+        'r:id="rIdActiveXBinary"/>'
+    ).encode()
+
+
+def _active_x_control_relationships() -> bytes:
+    """Return the required internal relationship from persistence XML to binary data."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
+        f'<Relationship Id="rIdActiveXBinary" Type="{_ACTIVE_X_BINARY_RELATIONSHIP}" '
+        'Target="activeX1.bin"/>'
+        "</Relationships>"
+    ).encode()
 
 
 def _linked_ole_markup() -> str:

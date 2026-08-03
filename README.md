@@ -1,10 +1,10 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-six paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-seven paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
-It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro and embedded-OLE payload boundaries.
+It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
-DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, or executes code.
+DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, instantiates an ActiveX control, or executes code.
 
 ## Install and use
 
@@ -37,9 +37,9 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the twenty-six cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the twenty-seven cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
 
-Version 0.15 adds a complete VML linked-OLE object case while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-six-case catalogue.
+Version 0.16 adds a complete ActiveX control-persistence boundary while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-seven-case catalogue.
 
 | Case | Declared fact | Reference convention |
 | --- | --- | --- |
@@ -69,14 +69,15 @@ Version 0.15 adds a complete VML linked-OLE object case while retaining fixture 
 | `binding.custom_xml_payload_changed` | `custom_xml_payload_changed` | review |
 | `macro.vba_project_payload_changed` | `macro_payload_changed` | block |
 | `embedded.ole_payload_changed` | `embedded_ole_payload_changed` | block |
+| `embedded.activex_control_persistence_payload_changed` | `activex_control_persistence_payload_changed` | block |
 
 `block` and `review` are reference conventions for benchmark scoring, not universal policy advice. A tool may use stricter or looser policy; DCAB scores whether it can report the declared static fact and whether it agrees with the published convention.
 
 ## Safety and privacy
 
-All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro and embedded-object bytes are inert text markers, not valid executable/OLE payloads. The public truth files deliberately exclude:
+All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro, embedded-OLE, and ActiveX persistence bytes are inert text markers, not valid executable, OLE, or control payloads. The public truth files deliberately exclude:
 
-- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, ActiveX control names, class IDs, persistence metadata, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, payload bytes, and payload fingerprints;
 - protection hashes, salts, passwords, and document content outside the fixed synthetic text.
 
@@ -89,6 +90,8 @@ Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its di
 Legacy VML shapes are a separate direct-link surface. Microsoft documents a `v:shape`'s [`href` as a hyperlink target](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.shape?view=openxml-3.0.1), and its Word OOXML guidance explains that Word 2007 continued to use VML for shapes and text boxes. DCAB fixes one compact `w:pict`/`v:rect` shape, its target frame, and its styling attributes while changing only the direct `href`. It does not resolve the URL, select a rendering branch, simulate a click, or claim that any client will follow the link.
 
 A VML [`o:OLEObject`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.office.oleobject?view=openxml-3.0.1) is a distinct relationship-backed form. Its `UpdateMode` applies when its `Type` is `Link`, and Microsoft’s [Office compatibility notes](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/19190ae3-5734-48eb-a919-b89d0b3ce114) describe that type as determining whether the OLE object is included in or stored externally from the package. DCAB fixes one `w:object` carrier, VML placeholder, `Type="Link"`, `ProgID`, shape/object IDs, visual aspect, update mode, and relationship ID while changing only its external standard `oleObject` relationship target. It neither retrieves a source, parses an OLE payload, activates an object, launches an application, nor claims a client will update or display it.
+
+An embedded [`w:control`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.control?view=openxml-3.0.1) can associate a Word `w:object` carrier with an internal control-properties relationship. Microsoft's [`ax:ocx` schema reference](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/48c99072-6cf7-4e69-84b1-3bea64f0ee3a) defines its class/persistence metadata and the binary relationship reference. The [Embedded Control Persistence Binary Data contract](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/81974a0b-05c0-4c46-b3b6-c96d0b3d3799) specifies the separate internal `activeXControlBinary` relationship from an ActiveX persistence part, and its [compatibility notes](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/754c8ac1-923d-412f-8fef-c85862e9124a) identify the ActiveX XML content type. DCAB fixes one inline `w:object`/`w:control` anchor, the internal `control` relationship, the `ax:ocx` persistence XML and its class/persistence metadata, both content types, and the required internal persistence-binary relationship while changing only inert synthetic binary bytes. It does not parse the bytes, load or instantiate a control, launch a client/server, render a placeholder, or claim any runtime behavior.
 
 Complex Word fields are a distinct parser boundary from `w:fldSimple`. Microsoft's [`w:fldChar` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldchar?view=openxml-3.0.1) defines the required begin/end markers and optional separator, while its [`w:instrText` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldcode?view=openxml-3.0.1) says instruction text is field code only when it occurs in the code portion of a complex field. DCAB fixes one complete `INCLUDETEXT` field with a begin marker, three preserved-whitespace instruction runs that split the keyword itself, a separator, a fixed result, and an end marker. Only the private source fragment changes. It does not resolve or import the source, update/evaluate a field, open Word, or claim a client will process the instruction.
 

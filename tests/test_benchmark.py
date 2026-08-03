@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 26,
-        "fact_count": 26,
+        "case_count": 27,
+        "fact_count": 27,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 26, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 27, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 50
-    assert loaded_package_count == 52
+    assert loaded_document_count == 52
+    assert loaded_package_count == 54
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -268,6 +268,96 @@ def test_vml_linked_ole_pair_has_a_fixed_anchor_and_one_target_boundary() -> Non
             "Target": target,
             "TargetMode": "External",
         }
+
+
+def test_active_x_control_persistence_pair_has_one_opaque_payload_boundary() -> None:
+    """The complete internal control topology stays fixed while only bytes change."""
+
+    case = FIXTURES / "embedded.activex_control_persistence_payload_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/activeX/activeX1.bin"
+        ]
+        baseline_content_types = baseline.read("[Content_Types].xml")
+        candidate_content_types = candidate.read("[Content_Types].xml")
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_document_relationships = baseline.read("word/_rels/document.xml.rels")
+        candidate_document_relationships = candidate.read("word/_rels/document.xml.rels")
+        baseline_persistence = baseline.read("word/activeX/activeX1.xml")
+        candidate_persistence = candidate.read("word/activeX/activeX1.xml")
+        baseline_persistence_relationships = baseline.read("word/activeX/_rels/activeX1.xml.rels")
+        candidate_persistence_relationships = candidate.read("word/activeX/_rels/activeX1.xml.rels")
+        assert baseline.read("word/activeX/activeX1.bin") != candidate.read(
+            "word/activeX/activeX1.bin"
+        )
+
+    assert baseline_content_types == candidate_content_types
+    assert baseline_document == candidate_document
+    assert baseline_document_relationships == candidate_document_relationships
+    assert baseline_persistence == candidate_persistence
+    assert baseline_persistence_relationships == candidate_persistence_relationships
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    active_x_namespace = "http://schemas.microsoft.com/office/2006/activeX"
+    document = ET.fromstring(baseline_document)
+    controls = list(document.iter(f"{{{word_namespace}}}control"))
+    objects = list(document.iter(f"{{{word_namespace}}}object"))
+    assert len(controls) == len(objects) == 1
+    control = controls[0]
+    assert objects[0].attrib == {}
+    assert list(objects[0]) == [control]
+    assert control.attrib == {
+        f"{{{relationship_namespace}}}id": "rIdActiveXControl",
+        f"{{{word_namespace}}}name": "DCABActiveXControl",
+    }
+    assert list(control) == []
+
+    content_types = ET.fromstring(baseline_content_types)
+    overrides = {
+        child.get("PartName"): child.get("ContentType")
+        for child in content_types
+        if child.tag == f"{{{content_types_namespace}}}Override"
+    }
+    assert overrides["/word/activeX/activeX1.xml"] == "application/vnd.ms-office.activeX+xml"
+    assert overrides["/word/activeX/activeX1.bin"] == "application/vnd.ms-office.activeX"
+
+    document_relationships = ET.fromstring(baseline_document_relationships)
+    control_relationship = document_relationships.find(
+        f"{{{package_relationship_namespace}}}Relationship[@Id='rIdActiveXControl']"
+    )
+    assert control_relationship is not None
+    assert control_relationship.attrib == {
+        "Id": "rIdActiveXControl",
+        "Type": f"{relationship_namespace}/control",
+        "Target": "activeX/activeX1.xml",
+    }
+
+    persistence = ET.fromstring(baseline_persistence)
+    assert persistence.tag == f"{{{active_x_namespace}}}ocx"
+    assert persistence.attrib == {
+        f"{{{active_x_namespace}}}classid": "{11111111-2222-3333-4444-555555555555}",
+        f"{{{active_x_namespace}}}persistence": "persistStorage",
+        f"{{{relationship_namespace}}}id": "rIdActiveXBinary",
+    }
+    assert list(persistence) == []
+
+    persistence_relationships = ET.fromstring(baseline_persistence_relationships)
+    assert persistence_relationships.tag == f"{{{package_relationship_namespace}}}Relationships"
+    assert len(persistence_relationships) == 1
+    assert persistence_relationships[0].attrib == {
+        "Id": "rIdActiveXBinary",
+        "Type": "http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary",
+        "Target": "activeX1.bin",
+    }
 
 
 def test_dde_field_pair_has_a_fixed_shape_and_one_source_argument_boundary() -> None:
@@ -825,8 +915,12 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdAltChunk",
         "rIdVbaProject",
         "rIdOleObject",
+        "rIdActiveXControl",
+        "rIdActiveXBinary",
         "vbaProject.bin",
         "oleObject1.bin",
+        "activeX1.xml",
+        "activeX1.bin",
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
@@ -864,6 +958,8 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "2026-08-03T00:00:00Z",
         "DCAB comment anchor carrier",
         "DCAB fixed review comment",
+        "DCABActiveXControl",
+        "{11111111-2222-3333-4444-555555555555}",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

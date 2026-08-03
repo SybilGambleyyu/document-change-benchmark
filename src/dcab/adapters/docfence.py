@@ -594,6 +594,67 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             report, "embedded_objects", "embedded_object_part_count", 1
         )
         return observed, _evidence("embedded_object_inventory_changed")
+    if kind == "activex_control_persistence_payload_changed":
+        observed = _has_changes(report, "embedded_object_inventory_changed") and all(
+            (
+                _same_count(
+                    report,
+                    "embedded_objects",
+                    "embedded_control_relationship_count",
+                    2,
+                ),
+                _same_count(report, "embedded_objects", "embedded_control_part_count", 2),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "embedded_control_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "embedded_control_story_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "object_parent_embedded_control_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "pict_parent_embedded_control_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "internal_standard_control_relationship_embedded_control_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "external_standard_control_relationship_embedded_control_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "unsupported_relationship_embedded_control_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_embedded_controls",
+                    "without_relationship_id_embedded_control_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("embedded_object_inventory_changed")
     return False, _evidence("unsupported")
 
 
