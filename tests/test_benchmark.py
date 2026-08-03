@@ -18,15 +18,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 14,
-        "fact_count": 14,
+        "case_count": 15,
+        "fact_count": 15,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 14, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 15, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -49,8 +49,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 26
-    assert loaded_package_count == 28
+    assert loaded_document_count == 28
+    assert loaded_package_count == 30
 
 
 def test_public_truth_excludes_generated_sensitive_material() -> None:
@@ -58,6 +58,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "example.invalid",
         "rIdHyperlink",
         "rIdAttachedTemplate",
+        "rIdSubDocument",
         "rIdLinkedPicture",
         "rIdVbaProject",
         "rIdOleObject",

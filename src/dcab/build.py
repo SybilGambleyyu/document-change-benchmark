@@ -52,6 +52,7 @@ _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
+_SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
 _IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
 _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
@@ -75,6 +76,8 @@ _INCLUDE_TEXT_APPROVED = "https://approved.example.invalid/dcab-source.docx"
 _INCLUDE_TEXT_CANDIDATE = "https://candidate.example.invalid/dcab-source.docx"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
+_SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
+_SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
 _LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
 _LINKED_PICTURE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-picture.png"
 _BINDING_XPATH_APPROVED = "/dcab:fixture/dcab:approved"
@@ -106,6 +109,7 @@ class DocumentVariant:
     hyperlink_field_target: str | None = None
     include_text_target: str | None = None
     attached_template_target: str | None = None
+    subdocument_target: str | None = None
     drawing_linked_picture_target: str | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
@@ -227,6 +231,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_APPROVED),
         candidate=DocumentVariant(attached_template_target=_ATTACHED_TEMPLATE_CANDIDATE),
         changed_members=("word/_rels/settings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="external.subdocument_target_retargeted",
+        title="Master-document subdocument target retargeted",
+        description=(
+            "A w:subDoc master-document anchor retains its relationship ID while the "
+            "external subdocument relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "dependency": "subdocument",
+            "kind": "external_document_dependency_target_changed",
+            "source": "word_document",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(subdocument_target=_SUBDOCUMENT_APPROVED),
+        candidate=DocumentVariant(subdocument_target=_SUBDOCUMENT_CANDIDATE),
+        changed_members=("word/_rels/document.xml.rels",),
     ),
     CaseSpec(
         case_id="external.drawing_linked_picture_target_retargeted",
@@ -475,6 +497,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("INCLUDETEXT target cannot be empty")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
+    if variant.subdocument_target is not None and not variant.subdocument_target:
+        raise FixtureBuildError("subdocument target cannot be empty")
     if (
         variant.drawing_linked_picture_target is not None
         and not variant.drawing_linked_picture_target
@@ -563,6 +587,10 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
                 "External",
             )
         )
+    if variant.subdocument_target is not None:
+        relationships.append(
+            ("rIdSubDocument", _SUBDOCUMENT_RELATIONSHIP, variant.subdocument_target, "External")
+        )
     if variant.custom_xml_payload is not None:
         relationships.append(
             ("rIdCustomXml", _CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "Internal")
@@ -626,6 +654,9 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     linked_picture_markup = (
         _linked_picture_markup() if variant.drawing_linked_picture_target is not None else ""
     )
+    subdocument_markup = (
+        '<w:subDoc r:id="rIdSubDocument"/>' if variant.subdocument_target is not None else ""
+    )
     value = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}" '
@@ -633,7 +664,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
-        '</w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        f'</w:p>{subdocument_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
     )

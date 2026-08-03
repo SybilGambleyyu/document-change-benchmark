@@ -37,6 +37,7 @@ from .build import (
     _SETTINGS_RELATIONSHIP,
     _STYLES_CONTENT_TYPE,
     _STYLES_RELATIONSHIP,
+    _SUBDOCUMENT_RELATIONSHIP,
     _VBA_PROJECT_CONTENT_TYPE,
     _VBA_PROJECT_RELATIONSHIP,
     _VISIBLE_TEXT,
@@ -255,6 +256,12 @@ def _validate_document_relationships(
             variant.drawing_linked_picture_target,
             "external",
         )
+    if variant.subdocument_target is not None:
+        expected["rIdSubDocument"] = (
+            _SUBDOCUMENT_RELATIONSHIP,
+            variant.subdocument_target,
+            "external",
+        )
     if variant.custom_xml_payload is not None:
         expected["rIdCustomXml"] = (_CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "internal")
     if variant.macro_payload is not None:
@@ -278,6 +285,12 @@ def _validate_document_xml(
     body = root.find(_word_tag("body"))
     if body is None or body.find(_word_tag("sectPr")) is None:
         _invalid(spec, f"{side} document body is invalid")
+
+    subdocuments = [element for element in body if element.tag == _word_tag("subDoc")]
+    if len(subdocuments) != int(variant.subdocument_target is not None):
+        _invalid(spec, f"{side} subdocument markup is invalid")
+    if subdocuments and subdocuments[0].get(f"{{{_REL_NS}}}id") != "rIdSubDocument":
+        _invalid(spec, f"{side} subdocument relationship is invalid")
 
     hyperlinks = list(root.iter(_word_tag("hyperlink")))
     expected_hyperlink_count = 1 if variant.direct_hyperlink_target is not None else 0
@@ -509,6 +522,7 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "example.invalid",
         "rIdHyperlink",
         "rIdAttachedTemplate",
+        "rIdSubDocument",
         "rIdLinkedPicture",
         "rIdVbaProject",
         "rIdOleObject",

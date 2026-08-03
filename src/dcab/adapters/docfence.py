@@ -170,24 +170,26 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         )
         return observed, _evidence("external_field_inventory_changed")
     if kind == "external_document_dependency_target_changed":
-        observed = (
-            _has_changes(
-                report,
-                "external_relationships_changed",
-                "external_document_dependency_inventory_changed",
-            )
-            and _same_count(
-                report,
-                "external_document_dependencies",
+        dependency = fact.get("dependency")
+        inventory_fields = {
+            "attached_template": (
                 "attached_template_anchor_count",
-                1,
-            )
-            and _same_count(
-                report,
-                "external_document_dependencies",
                 "attached_template_relationship_count",
-                1,
-            )
+            ),
+            "subdocument": (
+                "subdocument_anchor_count",
+                "subdocument_relationship_count",
+            ),
+        }.get(dependency)
+        if inventory_fields is None:
+            return False, _evidence("unsupported")
+        observed = _has_changes(
+            report,
+            "external_relationships_changed",
+            "external_document_dependency_inventory_changed",
+        ) and all(
+            _same_count(report, "external_document_dependencies", field, 1)
+            for field in inventory_fields
         )
         return observed, _evidence(
             "external_relationships_changed", "external_document_dependency_inventory_changed"
