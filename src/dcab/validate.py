@@ -70,6 +70,7 @@ from .build import (
     _PERMISSION_RANGE_TEXT,
     _PICTURE_NS,
     _REL_NS,
+    _SAVE_THROUGH_XSLT_RELATIONSHIP,
     _SETTINGS_CONTENT_TYPE,
     _SETTINGS_RELATIONSHIP,
     _STYLES_CONTENT_TYPE,
@@ -233,6 +234,7 @@ def _validate_package(
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
         or variant.mail_merge_recipient_active is not None
+        or variant.save_through_xslt_target is not None
     ):
         expected_members.add("word/_rels/settings.xml.rels")
     if set(members) != expected_members:
@@ -1118,6 +1120,8 @@ def _validate_settings(
     protections = list(root.iter(_word_tag("documentProtection")))
     attached_templates = list(root.iter(_word_tag("attachedTemplate")))
     mail_merges = list(root.iter(_word_tag("mailMerge")))
+    use_xslt_when_saving = list(root.iter(_word_tag("useXSLTWhenSaving")))
+    save_through_xslt = list(root.iter(_word_tag("saveThroughXslt")))
     document_variable_containers = [
         element for element in root if element.tag == _word_tag("docVars")
     ]
@@ -1134,6 +1138,10 @@ def _validate_settings(
         _invalid(spec, f"{side} attached template relationship is invalid")
     if len(mail_merges) != int(variant.mail_merge_data_source_target is not None):
         _invalid(spec, f"{side} mail-merge setting is invalid")
+    if len(use_xslt_when_saving) != int(variant.save_through_xslt_target is not None):
+        _invalid(spec, f"{side} save-through-XSLT enablement setting is invalid")
+    if len(save_through_xslt) != int(variant.save_through_xslt_target is not None):
+        _invalid(spec, f"{side} save-through-XSLT anchor is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if document_variable_containers:
@@ -1186,6 +1194,30 @@ def _validate_settings(
                 or (odso[0].tail or "").strip()
             ):
                 _invalid(spec, f"{side} mail-merge recipient-data anchor is invalid")
+    if variant.save_through_xslt_target is not None:
+        enabled_setting = use_xslt_when_saving[0]
+        transform = save_through_xslt[0]
+        if (
+            enabled_setting.attrib != {_word_tag("val"): "true"}
+            or list(enabled_setting)
+            or (enabled_setting.text or "").strip()
+            or (enabled_setting.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} save-through-XSLT enablement setting is invalid")
+        if (
+            transform.attrib != {f"{{{_REL_NS}}}id": "rIdSaveThroughXslt"}
+            or list(transform)
+            or (transform.text or "").strip()
+            or (transform.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} save-through-XSLT anchor is invalid")
+        direct_children = list(root)
+        if (
+            enabled_setting not in direct_children
+            or transform not in direct_children
+            or direct_children.index(enabled_setting) + 1 != direct_children.index(transform)
+        ):
+            _invalid(spec, f"{side} save-through-XSLT setting order is invalid")
     if protections:
         protection = protections[0]
         if (
@@ -1207,6 +1239,7 @@ def _validate_settings_relationships(
         variant.attached_template_target is None
         and variant.mail_merge_data_source_target is None
         and variant.mail_merge_recipient_active is None
+        and variant.save_through_xslt_target is None
     ):
         if has_relationships:
             _invalid(spec, f"{side} unexpected settings relationships are present")
@@ -1232,6 +1265,12 @@ def _validate_settings_relationships(
             _MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP,
             "recipientData.xml",
             "internal",
+        )
+    if variant.save_through_xslt_target is not None:
+        expected["rIdSaveThroughXslt"] = (
+            _SAVE_THROUGH_XSLT_RELATIONSHIP,
+            variant.save_through_xslt_target,
+            "external",
         )
     if relationships != expected:
         _invalid(spec, f"{side} settings relationships are invalid")

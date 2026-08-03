@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 28,
-        "fact_count": 28,
+        "case_count": 29,
+        "fact_count": 29,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 28, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 29, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 54
-    assert loaded_package_count == 56
+    assert loaded_document_count == 56
+    assert loaded_package_count == 58
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -91,6 +91,50 @@ def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> 
     assert candidate_relationship is not None
     assert baseline_relationship.get("Type") == f"{relationship_namespace}/mailMergeSource"
     assert candidate_relationship.get("Type") == f"{relationship_namespace}/mailMergeSource"
+    assert baseline_relationship.get("TargetMode") == "External"
+    assert candidate_relationship.get("TargetMode") == "External"
+    assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
+
+
+def test_save_through_xslt_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
+    """The XSLT-on-single-XML-save marker stays fixed while its target changes."""
+
+    case = FIXTURES / "external.save_through_xslt_target_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/_rels/settings.xml.rels"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        settings = baseline.read("word/settings.xml")
+        assert settings == candidate.read("word/settings.xml")
+        settings_root = ET.fromstring(settings)
+        baseline_relationships = ET.fromstring(baseline.read("word/_rels/settings.xml.rels"))
+        candidate_relationships = ET.fromstring(candidate.read("word/_rels/settings.xml.rels"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    assert [child.tag for child in settings_root] == [
+        f"{{{word_namespace}}}useXSLTWhenSaving",
+        f"{{{word_namespace}}}saveThroughXslt",
+    ]
+    assert settings_root[0].attrib == {f"{{{word_namespace}}}val": "true"}
+    assert settings_root[1].attrib == {f"{{{relationship_namespace}}}id": "rIdSaveThroughXslt"}
+    baseline_relationship = baseline_relationships.find(
+        f"{{{package_relationship_namespace}}}Relationship[@Id='rIdSaveThroughXslt']"
+    )
+    candidate_relationship = candidate_relationships.find(
+        f"{{{package_relationship_namespace}}}Relationship[@Id='rIdSaveThroughXslt']"
+    )
+    assert baseline_relationship is not None
+    assert candidate_relationship is not None
+    assert baseline_relationship.get("Type") == f"{relationship_namespace}/transform"
+    assert candidate_relationship.get("Type") == f"{relationship_namespace}/transform"
     assert baseline_relationship.get("TargetMode") == "External"
     assert candidate_relationship.get("TargetMode") == "External"
     assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
@@ -1015,6 +1059,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdAttachedTemplate",
         "rIdMailMergeSource",
         "rIdMailMergeRecipientData",
+        "rIdSaveThroughXslt",
         "rIdSubDocument",
         "rIdWebSettings",
         "rIdFrameSource",
@@ -1029,12 +1074,14 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "activeX1.xml",
         "activeX1.bin",
         "recipientData.xml",
+        "settings.xml.rels",
         "148730921",
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
         "approved-source.xlsx",
         "candidate-source.xlsx",
+        "dcab-transform.xslt",
         "Sheet1!R1C1",
         "DDE DCAB",
         "DCABReviewState",

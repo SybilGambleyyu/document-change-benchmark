@@ -362,6 +362,48 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("mail_merge_inventory_changed")
+    if kind == "save_through_xslt_target_changed":
+        observed = _has_changes(
+            report,
+            "external_relationships_changed",
+            "save_through_xslt_inventory_changed",
+        ) and all(
+            (
+                _same_count(
+                    report,
+                    "save_through_xslt",
+                    "save_through_xslt_enabled_setting_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "save_through_xslt",
+                    "save_through_xslt_disabled_setting_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "save_through_xslt",
+                    "save_through_xslt_anchor_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "save_through_xslt",
+                    "save_through_xslt_relationship_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "save_through_xslt",
+                    "save_through_xslt_solution_identifier_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence(
+            "external_relationships_changed", "save_through_xslt_inventory_changed"
+        )
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(
