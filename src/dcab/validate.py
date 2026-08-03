@@ -38,6 +38,10 @@ from .build import (
     _HYPERLINK_RELATIONSHIP,
     _IMAGE_RELATIONSHIP,
     _INCLUDE_TEXT_FIELD_RESULT,
+    _LINKED_OLE_OBJECT_ID,
+    _LINKED_OLE_PROG_ID,
+    _LINKED_OLE_SHAPE_ID,
+    _LINKED_OLE_UPDATE_MODE,
     _MAIL_MERGE_SOURCE_RELATIONSHIP,
     _MODERN_COMMENT_ANCHOR_TEXT,
     _MODERN_COMMENT_AUTHOR,
@@ -352,6 +356,12 @@ def _validate_document_relationships(
             "webSettings.xml",
             "internal",
         )
+    if variant.vml_linked_ole_target is not None:
+        expected["rIdLinkedOleObject"] = (
+            _OLE_OBJECT_RELATIONSHIP,
+            variant.vml_linked_ole_target,
+            "external",
+        )
     if variant.alternative_format_import_payload is not None:
         expected["rIdAltChunk"] = (_ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "internal")
     if variant.custom_xml_payload is not None:
@@ -633,6 +643,70 @@ def _validate_document_xml(
         _invalid(spec, f"{side} embedded OLE marker is invalid")
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
+
+    linked_ole_markers = [
+        element
+        for element in root.iter()
+        if element.tag == f"{{{_OFFICE_VML_NS}}}OLEObject"
+        and element.get("Type", "").casefold() == "link"
+    ]
+    if len(linked_ole_markers) != int(variant.vml_linked_ole_target is not None):
+        _invalid(spec, f"{side} VML linked-OLE marker is invalid")
+    if linked_ole_markers:
+        linked_ole_marker = linked_ole_markers[0]
+        linked_ole_containers = [
+            element for element in root.iter(_word_tag("object")) if linked_ole_marker in element
+        ]
+        linked_ole_runs = [
+            element
+            for element in root.iter(_word_tag("r"))
+            if linked_ole_containers and linked_ole_containers[0] in element
+        ]
+        expected_marker_attributes = {
+            "Type": "Link",
+            "ProgID": _LINKED_OLE_PROG_ID,
+            "ShapeID": _LINKED_OLE_SHAPE_ID,
+            "DrawAspect": "Content",
+            "ObjectID": _LINKED_OLE_OBJECT_ID,
+            f"{{{_REL_NS}}}id": "rIdLinkedOleObject",
+            "UpdateMode": _LINKED_OLE_UPDATE_MODE,
+        }
+        expected_shape_attributes = {
+            "id": _LINKED_OLE_SHAPE_ID,
+            "style": "width:1pt;height:1pt",
+            f"{{{_OFFICE_VML_NS}}}ole": "",
+        }
+        if (
+            len(linked_ole_containers) != 1
+            or len(linked_ole_runs) != 1
+            or linked_ole_runs[0].attrib
+            or list(linked_ole_runs[0]) != linked_ole_containers
+            or (linked_ole_runs[0].text or "").strip()
+            or (linked_ole_runs[0].tail or "").strip()
+        ):
+            _invalid(spec, f"{side} VML linked-OLE marker is invalid")
+        linked_ole_container = linked_ole_containers[0]
+        if (
+            linked_ole_container.attrib
+            or len(linked_ole_container) != 2
+            or (linked_ole_container.text or "").strip()
+            or (linked_ole_container.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} VML linked-OLE marker is invalid")
+        shape, marker = linked_ole_container
+        if (
+            shape.tag != f"{{{_VML_NS}}}shape"
+            or shape.attrib != expected_shape_attributes
+            or list(shape)
+            or (shape.text or "").strip()
+            or (shape.tail or "").strip()
+            or marker is not linked_ole_marker
+            or marker.attrib != expected_marker_attributes
+            or list(marker)
+            or (marker.text or "").strip()
+            or (marker.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} VML linked-OLE marker is invalid")
 
 
 def _validate_complex_include_text_field(

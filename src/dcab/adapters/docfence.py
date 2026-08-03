@@ -191,6 +191,69 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("word_vml_hyperlink_inventory_changed")
+    if kind == "vml_linked_ole_object_target_changed":
+        observed = _has_changes(
+            report,
+            "external_relationships_changed",
+            "embedded_object_inventory_changed",
+            "word_vml_linked_ole_object_inventory_changed",
+        ) and all(
+            (
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "vml_linked_ole_object_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "vml_linked_ole_object_story_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "automatic_update_vml_linked_ole_object_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "nonautomatic_or_unspecified_update_vml_linked_ole_object_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "external_standard_ole_object_relationship_vml_linked_ole_object_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "internal_standard_ole_object_relationship_vml_linked_ole_object_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "unsupported_relationship_vml_linked_ole_object_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_vml_linked_ole_objects",
+                    "without_relationship_id_vml_linked_ole_object_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence(
+            "external_relationships_changed",
+            "embedded_object_inventory_changed",
+            "word_vml_linked_ole_object_inventory_changed",
+        )
     if kind == "field_target_changed":
         observed = _has_changes(report, "word_hyperlink_field_inventory_changed") and _same_count(
             report, "word_hyperlink_fields", "hyperlink_field_reference_count", 1

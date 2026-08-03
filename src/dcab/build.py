@@ -152,6 +152,12 @@ _FRAME_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-frame.docx"
 _FRAME_LAYOUT = "rows"
 _FRAME_NAME = "DCAB frame carrier"
 _FRAME_SIZE = "216"
+_LINKED_OLE_APPROVED = "https://approved.example.invalid/dcab-linked-ole.xlsx"
+_LINKED_OLE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-ole.xlsx"
+_LINKED_OLE_SHAPE_ID = "DCABLinkedOleShape"
+_LINKED_OLE_PROG_ID = "DCAB.Synthetic"
+_LINKED_OLE_OBJECT_ID = "DCABLinkedOleObject"
+_LINKED_OLE_UPDATE_MODE = "OnCall"
 _LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
 _LINKED_PICTURE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-picture.png"
 _ALT_CHUNK_APPROVED = b"<html><body>DCAB synthetic alternate-content marker: approved</body></html>"
@@ -197,6 +203,7 @@ class DocumentVariant:
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
+    vml_linked_ole_target: str | None = None
     drawing_linked_picture_target: str | None = None
     alternative_format_import_payload: bytes | None = None
     hidden_text: bool = False
@@ -475,6 +482,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(frameset_source_target=_FRAME_SOURCE_APPROVED),
         candidate=DocumentVariant(frameset_source_target=_FRAME_SOURCE_CANDIDATE),
         changed_members=("word/_rels/webSettings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="external.vml_linked_ole_object_target_retargeted",
+        title="VML linked-OLE object target retargeted",
+        description=(
+            "A VML o:OLEObject Type=Link anchor retains its placeholder, link metadata, and "
+            "relationship ID while the external standard oleObject relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "kind": "vml_linked_ole_object_target_changed",
+            "source": "word_vml",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(vml_linked_ole_target=_LINKED_OLE_APPROVED),
+        candidate=DocumentVariant(vml_linked_ole_target=_LINKED_OLE_CANDIDATE),
+        changed_members=("word/_rels/document.xml.rels",),
     ),
     CaseSpec(
         case_id="external.drawing_linked_picture_target_retargeted",
@@ -814,6 +838,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
         raise FixtureBuildError("frameset source target cannot be empty")
+    if variant.vml_linked_ole_target is not None and not variant.vml_linked_ole_target:
+        raise FixtureBuildError("VML linked-OLE target cannot be empty")
     if (
         variant.alternative_format_import_payload is not None
         and not variant.alternative_format_import_payload
@@ -938,6 +964,15 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
     if variant.frameset_source_target is not None:
         relationships.append(
             ("rIdWebSettings", _WEB_SETTINGS_RELATIONSHIP, "webSettings.xml", "Internal")
+        )
+    if variant.vml_linked_ole_target is not None:
+        relationships.append(
+            (
+                "rIdLinkedOleObject",
+                _OLE_OBJECT_RELATIONSHIP,
+                variant.vml_linked_ole_target,
+                "External",
+            )
         )
     if variant.alternative_format_import_payload is not None:
         relationships.append(("rIdAltChunk", _ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "Internal"))
@@ -1094,6 +1129,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     )
     binding_markup = _binding_markup(variant.data_binding_xpath)
     ole_markup = _ole_markup() if variant.embedded_payload is not None else ""
+    linked_ole_markup = _linked_ole_markup() if variant.vml_linked_ole_target is not None else ""
     linked_picture_markup = (
         _linked_picture_markup() if variant.drawing_linked_picture_target is not None else ""
     )
@@ -1114,7 +1150,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
         f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}{binding_markup}"
-        f"{ole_markup}{linked_picture_markup}"
+        f"{ole_markup}{linked_ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
@@ -1250,6 +1286,20 @@ def _ole_markup() -> str:
         '<w:r><w:object><v:shape id="DCABOleShape" '
         'style="width:0;height:0"><o:OLEObject Type="Embed" ProgID="DCAB.Synthetic" '
         'r:id="rIdOleObject"/></v:shape></w:object></w:r>'
+    )
+
+
+def _linked_ole_markup() -> str:
+    """Return a fixed VML linked-OLE anchor backed by an external relationship."""
+
+    return (
+        f'<w:r><w:object><v:shape id="{_LINKED_OLE_SHAPE_ID}" '
+        'style="width:1pt;height:1pt" o:ole=""/>'
+        f'<o:OLEObject Type="Link" ProgID="{_LINKED_OLE_PROG_ID}" '
+        f'ShapeID="{_LINKED_OLE_SHAPE_ID}" DrawAspect="Content" '
+        f'ObjectID="{_LINKED_OLE_OBJECT_ID}" r:id="rIdLinkedOleObject" '
+        f'UpdateMode="{_LINKED_OLE_UPDATE_MODE}"/>'
+        "</w:object></w:r>"
     )
 
 
