@@ -226,6 +226,10 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
                 "subdocument_anchor_count",
                 "subdocument_relationship_count",
             ),
+            "frameset_source": (
+                "frame_source_anchor_count",
+                "frame_relationship_count",
+            ),
         }.get(dependency)
         if inventory_fields is None:
             return False, _evidence("unsupported")

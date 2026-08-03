@@ -31,6 +31,10 @@ from .build import (
     _DOCUMENT_VARIABLE_NAME,
     _DOCX_MAIN_CONTENT_TYPE,
     _DRAWING_NS,
+    _FRAME_LAYOUT,
+    _FRAME_NAME,
+    _FRAME_RELATIONSHIP,
+    _FRAME_SIZE,
     _HYPERLINK_RELATIONSHIP,
     _IMAGE_RELATIONSHIP,
     _INCLUDE_TEXT_FIELD_RESULT,
@@ -75,6 +79,8 @@ from .build import (
     _VML_NS,
     _VML_SHAPE_ID,
     _VML_SHAPE_TARGET_FRAME,
+    _WEB_SETTINGS_CONTENT_TYPE,
+    _WEB_SETTINGS_RELATIONSHIP,
     _WORD_2010_WORDML_NS,
     _WORD_2012_WORDML_NS,
     _WORD_NS,
@@ -199,6 +205,8 @@ def _validate_package(
             "word/webextensions/_rels/taskpanes.xml.rels",
             "word/webextensions/webextension1.xml",
         }
+    if variant.frameset_source_target is not None:
+        expected_members |= {"word/webSettings.xml", "word/_rels/webSettings.xml.rels"}
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
@@ -216,6 +224,7 @@ def _validate_package(
     _validate_alternative_format_import(members, variant, spec, side)
     _validate_settings(members, variant, spec, side)
     _validate_settings_relationships(members, variant, spec, side)
+    _validate_web_settings(members, variant, spec, side)
     _validate_styles(members, spec, side)
     _validate_custom_xml(members, variant, spec, side)
     if (
@@ -268,6 +277,8 @@ def _validate_content_types(
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
         expected["/word/embeddings/oleObject1.bin"] = _OLE_CONTENT_TYPE
+    if variant.frameset_source_target is not None:
+        expected["/word/webSettings.xml"] = _WEB_SETTINGS_CONTENT_TYPE
     if variant.modern_comment_done is not None:
         expected.update(
             {
@@ -334,6 +345,12 @@ def _validate_document_relationships(
             _SUBDOCUMENT_RELATIONSHIP,
             variant.subdocument_target,
             "external",
+        )
+    if variant.frameset_source_target is not None:
+        expected["rIdWebSettings"] = (
+            _WEB_SETTINGS_RELATIONSHIP,
+            "webSettings.xml",
+            "internal",
         )
     if variant.alternative_format_import_payload is not None:
         expected["rIdAltChunk"] = (_ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "internal")
@@ -961,6 +978,69 @@ def _validate_settings_relationships(
         _invalid(spec, f"{side} settings relationships are invalid")
 
 
+def _validate_web_settings(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate the complete, source-backed root frameset topology."""
+
+    if variant.frameset_source_target is None:
+        return
+    web_settings = _parse_xml(members["word/webSettings.xml"], spec)
+    if (
+        web_settings.tag != _word_tag("webSettings")
+        or web_settings.attrib
+        or len(web_settings) != 1
+        or (web_settings.text or "").strip()
+        or (web_settings.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} Web Settings root is invalid")
+    frameset = web_settings[0]
+    if (
+        frameset.tag != _word_tag("frameset")
+        or frameset.attrib
+        or len(frameset) != 2
+        or (frameset.text or "").strip()
+        or (frameset.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} frameset markup is invalid")
+    layout, frame = frameset
+    if not _is_empty_element(
+        layout,
+        _word_tag("frameLayout"),
+        {_word_tag("val"): _FRAME_LAYOUT},
+    ):
+        _invalid(spec, f"{side} frameset layout is invalid")
+    if (
+        frame.tag != _word_tag("frame")
+        or frame.attrib
+        or len(frame) != 3
+        or (frame.text or "").strip()
+        or (frame.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} frameset frame is invalid")
+    size, name, source = frame
+    if not (
+        _is_empty_element(size, _word_tag("sz"), {_word_tag("val"): _FRAME_SIZE})
+        and _is_empty_element(name, _word_tag("name"), {_word_tag("val"): _FRAME_NAME})
+        and _is_empty_element(
+            source,
+            _word_tag("sourceFileName"),
+            {f"{{{_REL_NS}}}id": "rIdFrameSource"},
+        )
+    ):
+        _invalid(spec, f"{side} frameset source anchor is invalid")
+    relationships = _relationship_map(members["word/_rels/webSettings.xml.rels"], spec)
+    expected = {
+        "rIdFrameSource": (
+            _FRAME_RELATIONSHIP,
+            variant.frameset_source_target,
+            "external",
+        )
+    }
+    if relationships != expected:
+        _invalid(spec, f"{side} frameset source relationship is invalid")
+
+
 def _validate_styles(members: dict[str, bytes], spec: CaseSpec, side: str) -> None:
     root = _parse_xml(members["word/styles.xml"], spec)
     if root.tag != _word_tag("styles"):
@@ -1059,6 +1139,8 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "rIdAttachedTemplate",
         "rIdMailMergeSource",
         "rIdSubDocument",
+        "rIdWebSettings",
+        "rIdFrameSource",
         "rIdLinkedPicture",
         "rIdAltChunk",
         "rIdVbaProject",
@@ -1078,6 +1160,7 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "rIdTaskpaneWebExtensions",
         "rIdTaskpaneWebExtension",
         "webextension1.xml",
+        "webSettings.xml",
         "rIdComments",
         "rIdCommentsExtended",
         "comments.xml",
@@ -1088,6 +1171,9 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
         _VML_SHAPE_ID,
         _VML_SHAPE_TARGET_FRAME,
+        _FRAME_LAYOUT,
+        _FRAME_NAME,
+        _FRAME_SIZE,
         _MODERN_COMMENT_PARAGRAPH_ID,
         _MODERN_COMMENT_TEXT_ID,
         _MODERN_COMMENT_AUTHOR,

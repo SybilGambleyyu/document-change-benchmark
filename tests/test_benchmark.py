@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 24,
-        "fact_count": 24,
+        "case_count": 25,
+        "fact_count": 25,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 24, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 25, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 46
-    assert loaded_package_count == 48
+    assert loaded_document_count == 48
+    assert loaded_package_count == 50
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -94,6 +94,102 @@ def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> 
     assert baseline_relationship.get("TargetMode") == "External"
     assert candidate_relationship.get("TargetMode") == "External"
     assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
+
+
+def test_frameset_source_pair_has_a_fixed_topology_and_one_target_boundary() -> None:
+    """One root frameset retains its anchor while its external source target changes."""
+
+    case = FIXTURES / "external.frameset_source_target_retargeted"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/_rels/webSettings.xml.rels"
+        ]
+        baseline_content_types = baseline.read("[Content_Types].xml")
+        candidate_content_types = candidate.read("[Content_Types].xml")
+        baseline_document_relationships = baseline.read("word/_rels/document.xml.rels")
+        candidate_document_relationships = candidate.read("word/_rels/document.xml.rels")
+        baseline_web_settings = baseline.read("word/webSettings.xml")
+        candidate_web_settings = candidate.read("word/webSettings.xml")
+        baseline_relationships = baseline.read("word/_rels/webSettings.xml.rels")
+        candidate_relationships = candidate.read("word/_rels/webSettings.xml.rels")
+
+    assert baseline_content_types == candidate_content_types
+    assert baseline_document_relationships == candidate_document_relationships
+    assert baseline_web_settings == candidate_web_settings
+    assert (
+        candidate_relationships.replace(
+            b"https://candidate.example.invalid/dcab-frame.docx",
+            b"https://approved.example.invalid/dcab-frame.docx",
+            1,
+        )
+        == baseline_relationships
+    )
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    content_types = ET.fromstring(baseline_content_types)
+    overrides = {
+        child.get("PartName"): child.get("ContentType")
+        for child in content_types
+        if child.tag == f"{{{content_types_namespace}}}Override"
+    }
+    assert overrides["/word/webSettings.xml"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml"
+    )
+
+    document_relationships = ET.fromstring(baseline_document_relationships)
+    document_relationship_by_id = {
+        relationship.get("Id"): relationship for relationship in document_relationships
+    }
+    assert document_relationship_by_id["rIdWebSettings"].attrib == {
+        "Id": "rIdWebSettings",
+        "Type": f"{relationship_namespace}/webSettings",
+        "Target": "webSettings.xml",
+    }
+
+    web_settings = ET.fromstring(baseline_web_settings)
+    assert web_settings.tag == f"{{{word_namespace}}}webSettings"
+    assert web_settings.attrib == {}
+    assert len(web_settings) == 1
+    frameset = web_settings[0]
+    assert frameset.tag == f"{{{word_namespace}}}frameset"
+    assert frameset.attrib == {}
+    assert [child.tag for child in frameset] == [
+        f"{{{word_namespace}}}frameLayout",
+        f"{{{word_namespace}}}frame",
+    ]
+    assert frameset[0].attrib == {f"{{{word_namespace}}}val": "rows"}
+    frame = frameset[1]
+    assert frame.attrib == {}
+    assert [child.tag for child in frame] == [
+        f"{{{word_namespace}}}sz",
+        f"{{{word_namespace}}}name",
+        f"{{{word_namespace}}}sourceFileName",
+    ]
+    assert frame[0].attrib == {f"{{{word_namespace}}}val": "216"}
+    assert frame[1].attrib == {f"{{{word_namespace}}}val": "DCAB frame carrier"}
+    assert frame[2].attrib == {f"{{{relationship_namespace}}}id": "rIdFrameSource"}
+
+    for target, relationships in (
+        ("https://approved.example.invalid/dcab-frame.docx", baseline_relationships),
+        ("https://candidate.example.invalid/dcab-frame.docx", candidate_relationships),
+    ):
+        root = ET.fromstring(relationships)
+        assert root.tag == f"{{{package_relationship_namespace}}}Relationships"
+        assert len(root) == 1
+        assert root[0].attrib == {
+            "Id": "rIdFrameSource",
+            "Type": f"{relationship_namespace}/frame",
+            "Target": target,
+            "TargetMode": "External",
+        }
 
 
 def test_dde_field_pair_has_a_fixed_shape_and_one_source_argument_boundary() -> None:
@@ -645,6 +741,8 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdAttachedTemplate",
         "rIdMailMergeSource",
         "rIdSubDocument",
+        "rIdWebSettings",
+        "rIdFrameSource",
         "rIdLinkedPicture",
         "rIdAltChunk",
         "rIdVbaProject",
@@ -667,6 +765,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdTaskpaneWebExtensions",
         "rIdTaskpaneWebExtension",
         "webextension1.xml",
+        "webSettings.xml",
         "rIdComments",
         "rIdCommentsExtended",
         "comments.xml",
@@ -677,6 +776,9 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "Office.AutoShowTaskpaneWithDocument",
         "DCABVmlLinkShape",
         "_blank",
+        "rows",
+        "DCAB frame carrier",
+        "216",
         "0A0B0C0D",
         "77777777",
         "DCAB-FIXTURE-COMMENT-AUTHOR",

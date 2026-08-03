@@ -1,8 +1,8 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-four paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-five paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
-It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro and embedded-OLE payload boundaries.
+It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source, master-subdocument, frameset-source, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro and embedded-OLE payload boundaries.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, or executes code.
 
@@ -37,9 +37,9 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the twenty-four cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the twenty-five cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
 
-Version 0.13 adds a fragmented complex `INCLUDETEXT` field case while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-four-case catalogue.
+Version 0.14 adds a complete frameset source case while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-five-case catalogue.
 
 | Case | Declared fact | Reference convention |
 | --- | --- | --- |
@@ -56,6 +56,7 @@ Version 0.13 adds a fragmented complex `INCLUDETEXT` field case while retaining 
 | `external.attached_template_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.mail_merge_data_source_target_retargeted` | `mail_merge_data_source_target_changed` | block |
 | `external.subdocument_target_retargeted` | `external_document_dependency_target_changed` | block |
+| `external.frameset_source_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.drawing_linked_picture_target_retargeted` | `drawing_linked_picture_target_changed` | block |
 | `import.alternative_format_html_payload_changed` | `alternative_format_import_payload_changed` | block |
 | `review.hidden_text_run_added` | `hidden_text_run_added` | review |
@@ -74,7 +75,7 @@ Version 0.13 adds a fragmented complex `INCLUDETEXT` field case while retaining 
 
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro and embedded-object bytes are inert text markers, not valid executable/OLE payloads. The public truth files deliberately exclude:
 
-- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, document-variable names and values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, payload bytes, and payload fingerprints;
 - protection hashes, salts, passwords, and document content outside the fixed synthetic text.
 
@@ -87,6 +88,8 @@ Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its di
 Legacy VML shapes are a separate direct-link surface. Microsoft documents a `v:shape`'s [`href` as a hyperlink target](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.shape?view=openxml-3.0.1), and its Word OOXML guidance explains that Word 2007 continued to use VML for shapes and text boxes. DCAB fixes one compact `w:pict`/`v:rect` shape, its target frame, and its styling attributes while changing only the direct `href`. It does not resolve the URL, select a rendering branch, simulate a click, or claim that any client will follow the link.
 
 Complex Word fields are a distinct parser boundary from `w:fldSimple`. Microsoft's [`w:fldChar` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldchar?view=openxml-3.0.1) defines the required begin/end markers and optional separator, while its [`w:instrText` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldcode?view=openxml-3.0.1) says instruction text is field code only when it occurs in the code portion of a complex field. DCAB fixes one complete `INCLUDETEXT` field with a begin marker, three preserved-whitespace instruction runs that split the keyword itself, a separator, a fixed result, and an end marker. Only the private source fragment changes. It does not resolve or import the source, update/evaluate a field, open Word, or claim a client will process the instruction.
+
+Framesets are a distinct external-document topology. Microsoft's [`w:sourceFileName` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.sourcefilereference?view=openxml-2.20.0) says that a frame source is identified by a relationship in the Web Settings part and requires the standard `frame` relationship type. The OOXML [Framesets contract](https://ooxml.info/docs/11/11.5/) further specifies that each frame target is external. DCAB fixes one content-type override, internal main-document-to-Web-Settings relationship, root frameset layout, frame size/name, source anchor, and relationship ID while changing only the private external target in `word/_rels/webSettings.xml.rels`. The standard says a document with a root frameset is a frameset definition rather than ordinary rendered document content; DCAB does not open, render, resolve, retrieve, import, authenticate to, or claim a client will display a frame.
 
 Office's [web-extension XML format](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-owexml/29f59f30-b835-461a-bd8a-ca400a7bc717) stores Office Add-in structures in Word documents. Microsoft's [auto-open task-pane guidance](https://learn.microsoft.com/en-us/office/dev/add-ins/develop/automatically-open-a-task-pane-with-a-document) specifies internally related `webextension` and `taskpane` parts and the `Office.AutoShowTaskpaneWithDocument` property. DCAB fixes the entire internal topology, task-pane shape, reference, and property name while changing only that property's stored `false`/`true` value. It does not retrieve, install, authenticate, or execute an add-in, and it does not claim that a pane opens: Microsoft documents that the add-in must already be installed, and current auto-open availability depends on deployment/support conditions.
 

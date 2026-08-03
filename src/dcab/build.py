@@ -49,6 +49,9 @@ _STYLES_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordproces
 _SETTINGS_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"
 )
+_WEB_SETTINGS_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml"
+)
 _COMMENTS_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
 )
@@ -70,6 +73,7 @@ _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
 _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
+_WEB_SETTINGS_RELATIONSHIP = f"{_REL_NS}/webSettings"
 _COMMENTS_RELATIONSHIP = f"{_REL_NS}/comments"
 _COMMENTS_EXTENDED_RELATIONSHIP = (
     "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
@@ -77,6 +81,7 @@ _COMMENTS_EXTENDED_RELATIONSHIP = (
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
 _MAIL_MERGE_SOURCE_RELATIONSHIP = f"{_REL_NS}/mailMergeSource"
 _SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
+_FRAME_RELATIONSHIP = f"{_REL_NS}/frame"
 _IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
 _ALT_CHUNK_RELATIONSHIP = f"{_REL_NS}/afChunk"
 _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
@@ -142,6 +147,11 @@ _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.
 _MAIL_MERGE_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-mail-merge.csv"
 _SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
 _SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
+_FRAME_SOURCE_APPROVED = "https://approved.example.invalid/dcab-frame.docx"
+_FRAME_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-frame.docx"
+_FRAME_LAYOUT = "rows"
+_FRAME_NAME = "DCAB frame carrier"
+_FRAME_SIZE = "216"
 _LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
 _LINKED_PICTURE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-picture.png"
 _ALT_CHUNK_APPROVED = b"<html><body>DCAB synthetic alternate-content marker: approved</body></html>"
@@ -186,6 +196,7 @@ class DocumentVariant:
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
+    frameset_source_target: str | None = None
     drawing_linked_picture_target: str | None = None
     alternative_format_import_payload: bytes | None = None
     hidden_text: bool = False
@@ -448,6 +459,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("word/_rels/document.xml.rels",),
     ),
     CaseSpec(
+        case_id="external.frameset_source_target_retargeted",
+        title="Frameset source target retargeted",
+        description=(
+            "A complete Web Settings frameset retains its layout, frame anchor, and "
+            "relationship ID while its required external frame-source relationship target changes."
+        ),
+        fact={
+            "binding": "external",
+            "dependency": "frameset_source",
+            "kind": "external_document_dependency_target_changed",
+            "source": "word_web_settings",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(frameset_source_target=_FRAME_SOURCE_APPROVED),
+        candidate=DocumentVariant(frameset_source_target=_FRAME_SOURCE_CANDIDATE),
+        changed_members=("word/_rels/webSettings.xml.rels",),
+    ),
+    CaseSpec(
         case_id="external.drawing_linked_picture_target_retargeted",
         title="DrawingML linked-picture target retargeted",
         description=(
@@ -659,6 +688,13 @@ def render_package(variant: DocumentVariant) -> bytes:
         "word/settings.xml": _settings_xml(variant),
         "word/styles.xml": _styles_xml(),
     }
+    if variant.frameset_source_target is not None:
+        members.update(
+            {
+                "word/webSettings.xml": _web_settings_xml(),
+                "word/_rels/webSettings.xml.rels": _web_settings_relationships(variant),
+            }
+        )
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
@@ -776,6 +812,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("mail-merge data-source target cannot be empty")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
+    if variant.frameset_source_target is not None and not variant.frameset_source_target:
+        raise FixtureBuildError("frameset source target cannot be empty")
     if (
         variant.alternative_format_import_payload is not None
         and not variant.alternative_format_import_payload
@@ -829,6 +867,8 @@ def _content_types(variant: DocumentVariant) -> bytes:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
         overrides.append(("/word/embeddings/oleObject1.bin", _OLE_CONTENT_TYPE))
+    if variant.frameset_source_target is not None:
+        overrides.append(("/word/webSettings.xml", _WEB_SETTINGS_CONTENT_TYPE))
     if variant.modern_comment_done is not None:
         overrides.extend(
             (
@@ -894,6 +934,10 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
     if variant.subdocument_target is not None:
         relationships.append(
             ("rIdSubDocument", _SUBDOCUMENT_RELATIONSHIP, variant.subdocument_target, "External")
+        )
+    if variant.frameset_source_target is not None:
+        relationships.append(
+            ("rIdWebSettings", _WEB_SETTINGS_RELATIONSHIP, "webSettings.xml", "Internal")
         )
     if variant.alternative_format_import_payload is not None:
         relationships.append(("rIdAltChunk", _ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "Internal"))
@@ -1301,6 +1345,35 @@ def _settings_relationships(variant: DocumentVariant) -> bytes:
     )
     values.append("</Relationships>")
     return "".join(values).encode()
+
+
+def _web_settings_xml() -> bytes:
+    """Return one fixed root frameset with a single source-backed frame."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<w:webSettings xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}">'
+        f'<w:frameset><w:frameLayout w:val="{_FRAME_LAYOUT}"/>'
+        f'<w:frame><w:sz w:val="{_FRAME_SIZE}"/>'
+        f'<w:name w:val="{_FRAME_NAME}"/>'
+        '<w:sourceFileName r:id="rIdFrameSource"/>'
+        "</w:frame></w:frameset></w:webSettings>"
+    ).encode()
+
+
+def _web_settings_relationships(variant: DocumentVariant) -> bytes:
+    """Return the external source relationship for the fixed frameset anchor."""
+
+    target = variant.frameset_source_target
+    if target is None:
+        raise FixtureBuildError("web settings relationships require a frame source")
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
+        f'<Relationship Id="rIdFrameSource" Type="{_FRAME_RELATIONSHIP}" '
+        f'Target="{html.escape(target, quote=True)}" TargetMode="External"/>'
+        "</Relationships>"
+    ).encode()
 
 
 def _styles_xml() -> bytes:
