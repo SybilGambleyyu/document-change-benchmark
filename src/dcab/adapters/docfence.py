@@ -395,6 +395,62 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("taskpane_web_extension_inventory_changed")
+    if kind == "modern_comment_done_state_changed":
+        observed = _has_changes(report, "modern_comment_metadata_inventory_changed") and all(
+            (
+                _same_count(report, "comment_count", None, 1),
+                _same_count(report, "modern_comment_metadata", "people_part_count", 0),
+                _same_count(report, "modern_comment_metadata", "person_count", 0),
+                _same_count(report, "modern_comment_metadata", "presence_info_count", 0),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "comments_extended_part_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "comment_extension_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "threaded_comment_count",
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "modern_comment_metadata",
+                    "resolved_comment_count",
+                    0,
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "comments_id_part_count",
+                    0,
+                ),
+                _same_count(report, "modern_comment_metadata", "comment_id_count", 0),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "comments_extensible_part_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "modern_comment_metadata",
+                    "comment_extensible_count",
+                    0,
+                ),
+                _same_count(report, "modern_comment_metadata", "reaction_count", 0),
+                _same_count(report, "modern_comment_metadata", "reaction_user_count", 0),
+            )
+        )
+        return observed, _evidence("modern_comment_metadata_inventory_changed")
     if kind == "document_variable_value_changed":
         observed = _has_changes(report, "word_document_variable_inventory_changed") and all(
             (

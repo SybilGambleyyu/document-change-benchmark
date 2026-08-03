@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 22,
-        "fact_count": 22,
+        "case_count": 23,
+        "fact_count": 23,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 22, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 23, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 42
-    assert loaded_package_count == 44
+    assert loaded_document_count == 44
+    assert loaded_package_count == 46
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -395,6 +395,149 @@ def test_taskpane_auto_show_pair_has_fixed_internal_parts_and_one_value_boundary
     }
 
 
+def test_modern_comment_done_pair_has_fixed_anchor_and_one_state_boundary() -> None:
+    """The classic comment stays fixed while one commentsExtended done value changes."""
+
+    case = FIXTURES / "review.modern_comment_done_state_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/commentsExtended.xml"
+        ]
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_comments = baseline.read("word/comments.xml")
+        candidate_comments = candidate.read("word/comments.xml")
+        baseline_relationships = baseline.read("word/_rels/document.xml.rels")
+        candidate_relationships = candidate.read("word/_rels/document.xml.rels")
+        baseline_content_types = baseline.read("[Content_Types].xml")
+        candidate_content_types = candidate.read("[Content_Types].xml")
+        baseline_extended = baseline.read("word/commentsExtended.xml")
+        candidate_extended = candidate.read("word/commentsExtended.xml")
+
+    assert baseline_document == candidate_document
+    assert baseline_comments == candidate_comments
+    assert baseline_relationships == candidate_relationships
+    assert baseline_content_types == candidate_content_types
+    assert candidate_extended.replace(b'w15:done="1"', b'w15:done="0"', 1) == baseline_extended
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    word_2010_namespace = "http://schemas.microsoft.com/office/word/2010/wordml"
+    word_2012_namespace = "http://schemas.microsoft.com/office/word/2012/wordml"
+    relationship_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    document_root = ET.fromstring(baseline_document)
+    comments_root = ET.fromstring(baseline_comments)
+    baseline_extended_root = ET.fromstring(baseline_extended)
+    candidate_extended_root = ET.fromstring(candidate_extended)
+
+    start_tag = f"{{{word_namespace}}}commentRangeStart"
+    end_tag = f"{{{word_namespace}}}commentRangeEnd"
+    reference_tag = f"{{{word_namespace}}}commentReference"
+    run_tag = f"{{{word_namespace}}}r"
+    text_tag = f"{{{word_namespace}}}t"
+    starts = list(document_root.iter(start_tag))
+    ends = list(document_root.iter(end_tag))
+    references = list(document_root.iter(reference_tag))
+    assert len(starts) == len(ends) == len(references) == 1
+    assert starts[0].attrib == {f"{{{word_namespace}}}id": "0"}
+    assert ends[0].attrib == {f"{{{word_namespace}}}id": "0"}
+    assert references[0].attrib == {f"{{{word_namespace}}}id": "0"}
+    paragraphs = [
+        paragraph
+        for paragraph in document_root.iter(f"{{{word_namespace}}}p")
+        if starts[0] in paragraph and ends[0] in paragraph
+    ]
+    assert len(paragraphs) == 1
+    paragraph_children = list(paragraphs[0])
+    start_index = paragraph_children.index(starts[0])
+    assert paragraph_children[start_index + 1].tag == run_tag
+    assert paragraph_children[start_index + 1][0].tag == text_tag
+    assert paragraph_children[start_index + 1][0].text == "DCAB comment anchor carrier"
+    assert paragraph_children[start_index + 2] is ends[0]
+    assert paragraph_children[start_index + 3].tag == run_tag
+    assert list(paragraph_children[start_index + 3]) == [references[0]]
+
+    assert comments_root.tag == f"{{{word_namespace}}}comments"
+    assert len(comments_root) == 1
+    comment = comments_root[0]
+    assert comment.tag == f"{{{word_namespace}}}comment"
+    assert comment.attrib == {
+        f"{{{word_namespace}}}id": "0",
+        f"{{{word_namespace}}}author": "DCAB-FIXTURE-COMMENT-AUTHOR",
+        f"{{{word_namespace}}}initials": "DCF",
+        f"{{{word_namespace}}}date": "2026-08-03T00:00:00Z",
+    }
+    assert len(comment) == 1
+    comment_paragraph = comment[0]
+    assert comment_paragraph.tag == f"{{{word_namespace}}}p"
+    assert comment_paragraph.attrib == {
+        f"{{{word_2010_namespace}}}paraId": "0A0B0C0D",
+        f"{{{word_2010_namespace}}}textId": "77777777",
+    }
+    assert len(comment_paragraph) == 2
+    assert comment_paragraph[0].tag == run_tag
+    assert comment_paragraph[0][0].tag == f"{{{word_namespace}}}annotationRef"
+    assert comment_paragraph[1].tag == run_tag
+    assert comment_paragraph[1][0].tag == text_tag
+    assert comment_paragraph[1][0].text == "DCAB fixed review comment"
+
+    relationships = ET.fromstring(baseline_relationships)
+    assert relationships.tag == f"{{{package_relationship_namespace}}}Relationships"
+    relationship_by_id = {relationship.get("Id"): relationship for relationship in relationships}
+    assert relationship_by_id["rIdComments"].attrib == {
+        "Id": "rIdComments",
+        "Type": f"{relationship_namespace}/comments",
+        "Target": "comments.xml",
+    }
+    assert relationship_by_id["rIdCommentsExtended"].attrib == {
+        "Id": "rIdCommentsExtended",
+        "Type": "http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
+        "Target": "commentsExtended.xml",
+    }
+
+    content_types = ET.fromstring(baseline_content_types)
+    content_type_overrides = {
+        child.get("PartName"): child.get("ContentType")
+        for child in content_types
+        if child.tag == f"{{{content_types_namespace}}}Override"
+    }
+    assert content_type_overrides["/word/comments.xml"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
+    )
+    assert content_type_overrides["/word/commentsExtended.xml"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
+    )
+
+    assert (
+        baseline_extended_root.tag
+        == candidate_extended_root.tag
+        == (f"{{{word_2012_namespace}}}commentsEx")
+    )
+    assert len(baseline_extended_root) == len(candidate_extended_root) == 1
+    assert (
+        baseline_extended_root[0].tag
+        == candidate_extended_root[0].tag
+        == (f"{{{word_2012_namespace}}}commentEx")
+    )
+    assert baseline_extended_root[0].attrib == {
+        f"{{{word_2012_namespace}}}paraId": "0A0B0C0D",
+        f"{{{word_2012_namespace}}}done": "0",
+    }
+    assert candidate_extended_root[0].attrib == {
+        f"{{{word_2012_namespace}}}paraId": "0A0B0C0D",
+        f"{{{word_2012_namespace}}}done": "1",
+    }
+    assert [node.text for node in document_root.iter(text_tag)] == [
+        node.text for node in ET.fromstring(candidate_document).iter(text_tag)
+    ]
+
+
 def test_public_truth_excludes_generated_sensitive_material() -> None:
     forbidden = (
         "example.invalid",
@@ -424,12 +567,23 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "rIdTaskpaneWebExtensions",
         "rIdTaskpaneWebExtension",
         "webextension1.xml",
+        "rIdComments",
+        "rIdCommentsExtended",
+        "comments.xml",
+        "commentsExtended.xml",
         "{3F08C2A1-681F-451E-95B6-001122334455}",
         "{F928A11C-9164-4F8A-8D92-556677889900}",
         "EXCatalog",
         "Office.AutoShowTaskpaneWithDocument",
         "DCABVmlLinkShape",
         "_blank",
+        "0A0B0C0D",
+        "77777777",
+        "DCAB-FIXTURE-COMMENT-AUTHOR",
+        "DCF",
+        "2026-08-03T00:00:00Z",
+        "DCAB comment anchor carrier",
+        "DCAB fixed review comment",
     )
     for case_id in CASE_IDS:
         content = (FIXTURES / case_id / "truth.json").read_text(encoding="utf-8")

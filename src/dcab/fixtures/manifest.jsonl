@@ -3,6 +3,7 @@
 {"id": "interaction.vml_shape_hyperlink_target_retargeted", "schema_version": 1, "truth": "interaction.vml_shape_hyperlink_target_retargeted/truth.json"}
 {"id": "interaction.word_hyperlink_field_target_retargeted", "schema_version": 1, "truth": "interaction.word_hyperlink_field_target_retargeted/truth.json"}
 {"id": "interaction.taskpane_auto_show_setting_enabled", "schema_version": 1, "truth": "interaction.taskpane_auto_show_setting_enabled/truth.json"}
+{"id": "review.modern_comment_done_state_changed", "schema_version": 1, "truth": "review.modern_comment_done_state_changed/truth.json"}
 {"id": "external.include_text_field_target_retargeted", "schema_version": 1, "truth": "external.include_text_field_target_retargeted/truth.json"}
 {"id": "external.dde_field_source_retargeted", "schema_version": 1, "truth": "external.dde_field_source_retargeted/truth.json"}
 {"id": "binding.document_variable_value_changed", "schema_version": 1, "truth": "binding.document_variable_value_changed/truth.json"}

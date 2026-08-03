@@ -24,6 +24,8 @@ _CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-type
 _PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_WORD_2010_WORDML_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
+_WORD_2012_WORDML_NS = "http://schemas.microsoft.com/office/word/2012/wordml"
 _DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _WORDPROCESSING_DRAWING_NS = (
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
@@ -47,6 +49,12 @@ _STYLES_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordproces
 _SETTINGS_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"
 )
+_COMMENTS_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
+)
+_COMMENTS_EXTENDED_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
+)
 _CUSTOM_XML_PROPERTIES_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.customXmlProperties+xml"
 )
@@ -62,6 +70,10 @@ _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
 _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
+_COMMENTS_RELATIONSHIP = f"{_REL_NS}/comments"
+_COMMENTS_EXTENDED_RELATIONSHIP = (
+    "http://schemas.microsoft.com/office/2011/relationships/commentsExtended"
+)
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
 _MAIL_MERGE_SOURCE_RELATIONSHIP = f"{_REL_NS}/mailMergeSource"
 _SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
@@ -116,6 +128,14 @@ _TASKPANE_WEB_EXTENSION_REFERENCE_VERSION = "1.0.0.0"
 _TASKPANE_WEB_EXTENSION_REFERENCE_STORE = "EXCatalog"
 _TASKPANE_WEB_EXTENSION_REFERENCE_STORE_TYPE = "EXCatalog"
 _TASKPANE_AUTO_SHOW_PROPERTY_NAME = "Office.AutoShowTaskpaneWithDocument"
+_MODERN_COMMENT_ID = "0"
+_MODERN_COMMENT_PARAGRAPH_ID = "0A0B0C0D"
+_MODERN_COMMENT_TEXT_ID = "77777777"
+_MODERN_COMMENT_AUTHOR = "DCAB-FIXTURE-COMMENT-AUTHOR"
+_MODERN_COMMENT_INITIALS = "DCF"
+_MODERN_COMMENT_DATE = "2026-08-03T00:00:00Z"
+_MODERN_COMMENT_ANCHOR_TEXT = "DCAB comment anchor carrier"
+_MODERN_COMMENT_TEXT = "DCAB fixed review comment"
 _ATTACHED_TEMPLATE_APPROVED = "https://approved.example.invalid/dcab-template.dotx"
 _ATTACHED_TEMPLATE_CANDIDATE = "https://candidate.example.invalid/dcab-template.dotx"
 _MAIL_MERGE_SOURCE_APPROVED = "https://approved.example.invalid/dcab-mail-merge.csv"
@@ -161,6 +181,7 @@ class DocumentVariant:
     document_variable_value: str | None = None
     permission_range_editor: str | None = None
     taskpane_auto_show: bool | None = None
+    modern_comment_done: bool | None = None
     attached_template_target: str | None = None
     mail_merge_data_source_target: str | None = None
     subdocument_target: str | None = None
@@ -284,6 +305,22 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(taskpane_auto_show=False),
         candidate=DocumentVariant(taskpane_auto_show=True),
         changed_members=("word/webextensions/webextension1.xml",),
+    ),
+    CaseSpec(
+        case_id="review.modern_comment_done_state_changed",
+        title="Office 2013 extended-comment done state changed",
+        description=(
+            "An anchored classic comment and its Office 2013 commentsExtended metadata "
+            "retain their fixed shape while the stored done state changes from false to true."
+        ),
+        fact={
+            "kind": "modern_comment_done_state_changed",
+            "source": "word_comments_extended",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(modern_comment_done=False),
+        candidate=DocumentVariant(modern_comment_done=True),
+        changed_members=("word/commentsExtended.xml",),
     ),
     CaseSpec(
         case_id="external.include_text_field_target_retargeted",
@@ -621,6 +658,13 @@ def render_package(variant: DocumentVariant) -> bytes:
         members["word/vbaProject.bin"] = variant.macro_payload
     if variant.embedded_payload is not None:
         members["word/embeddings/oleObject1.bin"] = variant.embedded_payload
+    if variant.modern_comment_done is not None:
+        members.update(
+            {
+                "word/comments.xml": _comments_xml(),
+                "word/commentsExtended.xml": _comments_extended_xml(variant.modern_comment_done),
+            }
+        )
     if variant.taskpane_auto_show is not None:
         members.update(
             {
@@ -695,6 +739,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("permission-range editor cannot be empty")
     if variant.taskpane_auto_show is not None and not isinstance(variant.taskpane_auto_show, bool):
         raise FixtureBuildError("task-pane auto-show setting must be boolean")
+    if variant.modern_comment_done is not None and not isinstance(
+        variant.modern_comment_done, bool
+    ):
+        raise FixtureBuildError("modern-comment done setting must be boolean")
     if variant.attached_template_target is not None and not variant.attached_template_target:
         raise FixtureBuildError("attached template target cannot be empty")
     if (
@@ -757,6 +805,13 @@ def _content_types(variant: DocumentVariant) -> bytes:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
         overrides.append(("/word/embeddings/oleObject1.bin", _OLE_CONTENT_TYPE))
+    if variant.modern_comment_done is not None:
+        overrides.extend(
+            (
+                ("/word/comments.xml", _COMMENTS_CONTENT_TYPE),
+                ("/word/commentsExtended.xml", _COMMENTS_EXTENDED_CONTENT_TYPE),
+            )
+        )
     if variant.taskpane_auto_show is not None:
         overrides.extend(
             (
@@ -829,6 +884,18 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
     if variant.embedded_payload is not None:
         relationships.append(
             ("rIdOleObject", _OLE_OBJECT_RELATIONSHIP, "embeddings/oleObject1.bin", "Internal")
+        )
+    if variant.modern_comment_done is not None:
+        relationships.extend(
+            (
+                ("rIdComments", _COMMENTS_RELATIONSHIP, "comments.xml", "Internal"),
+                (
+                    "rIdCommentsExtended",
+                    _COMMENTS_EXTENDED_RELATIONSHIP,
+                    "commentsExtended.xml",
+                    "Internal",
+                ),
+            )
         )
     if variant.taskpane_auto_show is not None:
         relationships.append(
@@ -943,6 +1010,9 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.permission_range_editor is not None
         else ""
     )
+    modern_comment_anchor_markup = (
+        _modern_comment_anchor_markup() if variant.modern_comment_done is not None else ""
+    )
     hidden_properties = "<w:rPr><w:vanish/></w:rPr>" if variant.hidden_text else ""
     hidden_markup = f"<w:r>{hidden_properties}<w:t>{_HIDDEN_TEXT}</w:t></w:r>"
     revision_run = _run(_REVISION_TEXT)
@@ -972,7 +1042,8 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{vml_shape_hyperlink_markup}"
         f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
-        f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
+        f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}{binding_markup}"
+        f"{ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
@@ -1012,6 +1083,46 @@ def _permission_range_markup(editor: str) -> str:
         f"{_run(_PERMISSION_RANGE_TEXT)}"
         f'<w:permEnd w:id="{_PERMISSION_RANGE_MARKER_ID}"/>'
     )
+
+
+def _modern_comment_anchor_markup() -> str:
+    """Return one fixed classic-comment anchor for commentsExtended metadata."""
+
+    return (
+        f'<w:commentRangeStart w:id="{_MODERN_COMMENT_ID}"/>'
+        f"{_run(_MODERN_COMMENT_ANCHOR_TEXT)}"
+        f'<w:commentRangeEnd w:id="{_MODERN_COMMENT_ID}"/>'
+        f'<w:r><w:commentReference w:id="{_MODERN_COMMENT_ID}"/></w:r>'
+    )
+
+
+def _comments_xml() -> bytes:
+    """Return one fixed classic comment associated with commentsExtended metadata."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<w:comments xmlns:w="{_WORD_NS}" xmlns:w14="{_WORD_2010_WORDML_NS}">'
+        f'<w:comment w:id="{_MODERN_COMMENT_ID}" '
+        f'w:author="{_MODERN_COMMENT_AUTHOR}" w:initials="{_MODERN_COMMENT_INITIALS}" '
+        f'w:date="{_MODERN_COMMENT_DATE}">'
+        f'<w:p w14:paraId="{_MODERN_COMMENT_PARAGRAPH_ID}" '
+        f'w14:textId="{_MODERN_COMMENT_TEXT_ID}">'
+        f"<w:r><w:annotationRef/></w:r>{_run(_MODERN_COMMENT_TEXT)}"
+        "</w:p></w:comment></w:comments>"
+    ).encode()
+
+
+def _comments_extended_xml(done: bool) -> bytes:
+    """Return Office 2013 comment metadata with one explicit done-state value."""
+
+    value = "1" if done else "0"
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<w15:commentsEx xmlns:w15="{_WORD_2012_WORDML_NS}">'
+        f'<w15:commentEx w15:paraId="{_MODERN_COMMENT_PARAGRAPH_ID}" '
+        f'w15:done="{value}"/>'
+        "</w15:commentsEx>"
+    ).encode()
 
 
 def _vml_shape_hyperlink_markup(target: str) -> str:

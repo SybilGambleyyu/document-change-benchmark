@@ -18,6 +18,10 @@ from .build import (
     _ALT_CHUNK_CONTENT_TYPE,
     _ALT_CHUNK_RELATIONSHIP,
     _ATTACHED_TEMPLATE_RELATIONSHIP,
+    _COMMENTS_CONTENT_TYPE,
+    _COMMENTS_EXTENDED_CONTENT_TYPE,
+    _COMMENTS_EXTENDED_RELATIONSHIP,
+    _COMMENTS_RELATIONSHIP,
     _CONTENT_TYPES_NS,
     _CUSTOM_XML_PROPERTIES_CONTENT_TYPE,
     _CUSTOM_XML_PROPERTIES_NS,
@@ -30,6 +34,14 @@ from .build import (
     _HYPERLINK_RELATIONSHIP,
     _IMAGE_RELATIONSHIP,
     _MAIL_MERGE_SOURCE_RELATIONSHIP,
+    _MODERN_COMMENT_ANCHOR_TEXT,
+    _MODERN_COMMENT_AUTHOR,
+    _MODERN_COMMENT_DATE,
+    _MODERN_COMMENT_ID,
+    _MODERN_COMMENT_INITIALS,
+    _MODERN_COMMENT_PARAGRAPH_ID,
+    _MODERN_COMMENT_TEXT,
+    _MODERN_COMMENT_TEXT_ID,
     _OFFICE_DOCUMENT_RELATIONSHIP,
     _OFFICE_VML_NS,
     _OLE_CONTENT_TYPE,
@@ -62,6 +74,8 @@ from .build import (
     _VML_NS,
     _VML_SHAPE_ID,
     _VML_SHAPE_TARGET_FRAME,
+    _WORD_2010_WORDML_NS,
+    _WORD_2012_WORDML_NS,
     _WORD_NS,
     _WORDPROCESSING_DRAWING_NS,
     CASE_IDS,
@@ -171,6 +185,8 @@ def _validate_package(
         expected_members.add("word/vbaProject.bin")
     if variant.embedded_payload is not None:
         expected_members.add("word/embeddings/oleObject1.bin")
+    if variant.modern_comment_done is not None:
+        expected_members |= {"word/comments.xml", "word/commentsExtended.xml"}
     if variant.alternative_format_import_payload is not None:
         expected_members.add("word/afchunk1.html")
     if variant.taskpane_auto_show is not None:
@@ -191,6 +207,7 @@ def _validate_package(
     _validate_root_relationships(members, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
+    _validate_modern_comment(members, variant, spec, side)
     _validate_taskpane_web_extension(members, variant, spec, side)
     _validate_alternative_format_import(members, variant, spec, side)
     _validate_settings(members, variant, spec, side)
@@ -247,6 +264,13 @@ def _validate_content_types(
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
         expected["/word/embeddings/oleObject1.bin"] = _OLE_CONTENT_TYPE
+    if variant.modern_comment_done is not None:
+        expected.update(
+            {
+                "/word/comments.xml": _COMMENTS_CONTENT_TYPE,
+                "/word/commentsExtended.xml": _COMMENTS_EXTENDED_CONTENT_TYPE,
+            }
+        )
     if variant.taskpane_auto_show is not None:
         expected.update(
             {
@@ -318,6 +342,17 @@ def _validate_document_relationships(
             _OLE_OBJECT_RELATIONSHIP,
             "embeddings/oleObject1.bin",
             "internal",
+        )
+    if variant.modern_comment_done is not None:
+        expected.update(
+            {
+                "rIdComments": (_COMMENTS_RELATIONSHIP, "comments.xml", "internal"),
+                "rIdCommentsExtended": (
+                    _COMMENTS_EXTENDED_RELATIONSHIP,
+                    "commentsExtended.xml",
+                    "internal",
+                ),
+            }
         )
     if variant.taskpane_auto_show is not None:
         expected["rIdTaskpaneWebExtensions"] = (
@@ -486,6 +521,61 @@ def _validate_document_xml(
         ):
             _invalid(spec, f"{side} editable-range permission markup is invalid")
 
+    comment_starts = list(root.iter(_word_tag("commentRangeStart")))
+    comment_ends = list(root.iter(_word_tag("commentRangeEnd")))
+    comment_references = list(root.iter(_word_tag("commentReference")))
+    expected_comment_anchor_count = int(variant.modern_comment_done is not None)
+    if (
+        len(comment_starts) != expected_comment_anchor_count
+        or len(comment_ends) != expected_comment_anchor_count
+        or len(comment_references) != expected_comment_anchor_count
+    ):
+        _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+    if comment_starts:
+        comment_start = comment_starts[0]
+        comment_end = comment_ends[0]
+        comment_reference = comment_references[0]
+        expected_anchor_attributes = {_word_tag("id"): _MODERN_COMMENT_ID}
+        if not (
+            _is_empty_element(
+                comment_start, _word_tag("commentRangeStart"), expected_anchor_attributes
+            )
+            and _is_empty_element(
+                comment_end, _word_tag("commentRangeEnd"), expected_anchor_attributes
+            )
+            and _is_empty_element(
+                comment_reference, _word_tag("commentReference"), expected_anchor_attributes
+            )
+        ):
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+        reference_runs = [run for run in root.iter(_word_tag("r")) if comment_reference in run]
+        if len(reference_runs) != 1:
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+        reference_run = reference_runs[0]
+        if (
+            reference_run.attrib
+            or len(reference_run) != 1
+            or (reference_run.text or "").strip()
+            or (reference_run.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+        comment_paragraphs = [
+            paragraph
+            for paragraph in root.iter(_word_tag("p"))
+            if comment_start in paragraph or comment_end in paragraph or reference_run in paragraph
+        ]
+        if len(comment_paragraphs) != 1:
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+        paragraph_children = list(comment_paragraphs[0])
+        start_index = paragraph_children.index(comment_start)
+        end_index = paragraph_children.index(comment_end)
+        reference_index = paragraph_children.index(reference_run)
+        if end_index != start_index + 2 or reference_index != end_index + 1:
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+        carrier = paragraph_children[start_index + 1]
+        if not _is_comment_text_run(carrier, _MODERN_COMMENT_ANCHOR_TEXT):
+            _invalid(spec, f"{side} modern-comment anchor markup is invalid")
+
     hidden_count = sum(1 for run in root.iter(_word_tag("r")) if _run_has_vanish(run))
     if hidden_count != int(variant.hidden_text):
         _invalid(spec, f"{side} hidden-text markup is invalid")
@@ -520,6 +610,83 @@ def _validate_document_xml(
         _invalid(spec, f"{side} embedded OLE marker is invalid")
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
+
+
+def _validate_modern_comment(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate the fixed classic-comment and Office 2013 metadata pairing."""
+
+    if variant.modern_comment_done is None:
+        return
+
+    comments = _parse_xml(members["word/comments.xml"], spec)
+    if (
+        comments.tag != _word_tag("comments")
+        or comments.attrib
+        or len(comments) != 1
+        or (comments.text or "").strip()
+        or (comments.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} classic comment root is invalid")
+    comment = comments[0]
+    expected_comment_attributes = {
+        _word_tag("id"): _MODERN_COMMENT_ID,
+        _word_tag("author"): _MODERN_COMMENT_AUTHOR,
+        _word_tag("initials"): _MODERN_COMMENT_INITIALS,
+        _word_tag("date"): _MODERN_COMMENT_DATE,
+    }
+    if (
+        comment.tag != _word_tag("comment")
+        or comment.attrib != expected_comment_attributes
+        or len(comment) != 1
+        or (comment.text or "").strip()
+        or (comment.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} classic comment is invalid")
+    paragraph = comment[0]
+    expected_paragraph_attributes = {
+        f"{{{_WORD_2010_WORDML_NS}}}paraId": _MODERN_COMMENT_PARAGRAPH_ID,
+        f"{{{_WORD_2010_WORDML_NS}}}textId": _MODERN_COMMENT_TEXT_ID,
+    }
+    if (
+        paragraph.tag != _word_tag("p")
+        or paragraph.attrib != expected_paragraph_attributes
+        or len(paragraph) != 2
+        or (paragraph.text or "").strip()
+        or (paragraph.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} classic comment paragraph is invalid")
+    annotation_run, text_run = paragraph
+    if (
+        annotation_run.tag != _word_tag("r")
+        or annotation_run.attrib
+        or len(annotation_run) != 1
+        or not _is_empty_element(annotation_run[0], _word_tag("annotationRef"), {})
+        or (annotation_run.text or "").strip()
+        or (annotation_run.tail or "").strip()
+        or not _is_comment_text_run(text_run, _MODERN_COMMENT_TEXT)
+    ):
+        _invalid(spec, f"{side} classic comment content is invalid")
+
+    comments_extended = _parse_xml(members["word/commentsExtended.xml"], spec)
+    expected_done = "1" if variant.modern_comment_done else "0"
+    if (
+        comments_extended.tag != f"{{{_WORD_2012_WORDML_NS}}}commentsEx"
+        or comments_extended.attrib
+        or len(comments_extended) != 1
+        or (comments_extended.text or "").strip()
+        or (comments_extended.tail or "").strip()
+        or not _is_empty_element(
+            comments_extended[0],
+            f"{{{_WORD_2012_WORDML_NS}}}commentEx",
+            {
+                f"{{{_WORD_2012_WORDML_NS}}}paraId": _MODERN_COMMENT_PARAGRAPH_ID,
+                f"{{{_WORD_2012_WORDML_NS}}}done": expected_done,
+            },
+        )
+    ):
+        _invalid(spec, f"{side} commentsExtended metadata is invalid")
 
 
 def _validate_taskpane_web_extension(
@@ -854,12 +1021,23 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "rIdTaskpaneWebExtensions",
         "rIdTaskpaneWebExtension",
         "webextension1.xml",
+        "rIdComments",
+        "rIdCommentsExtended",
+        "comments.xml",
+        "commentsExtended.xml",
         _TASKPANE_WEB_EXTENSION_ID,
         _TASKPANE_WEB_EXTENSION_REFERENCE_ID,
         _TASKPANE_WEB_EXTENSION_REFERENCE_STORE,
         _TASKPANE_AUTO_SHOW_PROPERTY_NAME,
         _VML_SHAPE_ID,
         _VML_SHAPE_TARGET_FRAME,
+        _MODERN_COMMENT_PARAGRAPH_ID,
+        _MODERN_COMMENT_TEXT_ID,
+        _MODERN_COMMENT_AUTHOR,
+        _MODERN_COMMENT_INITIALS,
+        _MODERN_COMMENT_DATE,
+        _MODERN_COMMENT_ANCHOR_TEXT,
+        _MODERN_COMMENT_TEXT,
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")
@@ -882,6 +1060,23 @@ def _is_empty_element(element: ET.Element, tag: str, attributes: dict[str, str])
         and not list(element)
         and not (element.text or "").strip()
         and not (element.tail or "").strip()
+    )
+
+
+def _is_comment_text_run(run: ET.Element, text: str) -> bool:
+    """Return whether ``run`` has exactly one unstyled Word text child."""
+
+    return (
+        run.tag == _word_tag("r")
+        and not run.attrib
+        and len(run) == 1
+        and run[0].tag == _word_tag("t")
+        and not run[0].attrib
+        and run[0].text == text
+        and not list(run[0])
+        and not (run[0].tail or "").strip()
+        and not (run.text or "").strip()
+        and not (run.tail or "").strip()
     )
 
 

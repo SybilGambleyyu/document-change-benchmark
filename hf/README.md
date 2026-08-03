@@ -17,9 +17,9 @@ size_categories:
 
 # Document Change Assurance Benchmark (DCAB)
 
-This dataset mirrors the deterministic fixture corpus from [DCAB v0.11.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.11.0). It contains 22 paired synthetic WordprocessingML cases for static document-change assurance.
+This dataset mirrors the deterministic fixture corpus from [DCAB v0.12.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.12.0). It contains 23 paired synthetic WordprocessingML cases for static document-change assurance.
 
-Each case directory provides a baseline package, candidate package, and target-free `truth.json`. The public truth files describe only a narrow fact category and a reference review convention. They never disclose URI-like targets, field instructions, VML shape IDs or target frames, document-variable names or values, permission marker IDs or individual editor assignments, task-pane web-extension IDs, references, store descriptors, property values, XPath values, relationship IDs, custom XML values, or opaque payload bytes.
+Each case directory provides a baseline package, candidate package, and target-free `truth.json`. The public truth files describe only a narrow fact category and a reference review convention. They never disclose URI-like targets, field instructions, VML shape IDs or target frames, document-variable names or values, permission marker IDs or individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment author/initial/date/body values, raw `commentsExtended` serialization values, references, store descriptors, property values, XPath values, relationship IDs, custom XML values, or opaque payload bytes.
 
 ## Layout
 
@@ -33,7 +33,7 @@ fixtures/
   ...
 ```
 
-The corpus covers direct Word and legacy VML shape hyperlinks, `HYPERLINK`, `INCLUDETEXT`, `DDE`, and `DOCVARIABLE` fields, persisted document variables, editable-range permission markup, task-pane Office web-extension auto-show configuration, attached-template and mail-merge data-source settings, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text, tracked insertion markup, Track Changes and document protection settings, content-control/custom-XML bindings, VBA project payload boundaries, and embedded OLE payload boundaries.
+The corpus covers direct Word and legacy VML shape hyperlinks, `HYPERLINK`, `INCLUDETEXT`, `DDE`, and `DOCVARIABLE` fields, persisted document variables, editable-range permission markup, task-pane Office web-extension auto-show configuration, Office 2013 `commentsExtended` done metadata, attached-template and mail-merge data-source settings, master-subdocument, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text, tracked insertion markup, Track Changes and document protection settings, content-control/custom-XML bindings, VBA project payload boundaries, and embedded OLE payload boundaries.
 
 ## Safety boundary
 
@@ -52,4 +52,4 @@ This mirror has no special execution requirement. It is provided under the MIT l
 
 ## Scope
 
-DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. In particular, the VML pair does not resolve or follow its direct link, and the task-pane pair does not install, retrieve, authenticate, or execute an add-in or assert that a pane opens. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.11.0/RESEARCH.md) for contract details and limits.
+DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. In particular, the VML pair does not resolve or follow its direct link; the task-pane pair does not install, retrieve, authenticate, or execute an add-in or assert that a pane opens; and the `commentsExtended` pair does not open Word, resolve a thread, infer an identity, synchronize with a service, or assert a client comment UI behavior. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.12.0/RESEARCH.md) for contract details and limits.
