@@ -1,6 +1,6 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies twenty-nine paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
 It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings and custom XML, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
@@ -37,9 +37,9 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the twenty-nine cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the thirty cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
 
-Version 0.18 adds an enabled single-XML-save XSLT transform boundary while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this twenty-nine-case catalogue.
+Version 0.19 adds a direct attached-custom-XML-schema namespace rewrite boundary while retaining fixture schema version 1: the truth and observation envelopes are unchanged. An earlier observation can still be parsed, but it is incomplete when scored against this thirty-case catalogue.
 
 | Case | Declared fact | Reference convention |
 | --- | --- | --- |
@@ -57,6 +57,7 @@ Version 0.18 adds an enabled single-XML-save XSLT transform boundary while retai
 | `external.mail_merge_data_source_target_retargeted` | `mail_merge_data_source_target_changed` | block |
 | `review.mail_merge_recipient_active_state_changed` | `mail_merge_recipient_active_state_changed` | block |
 | `external.save_through_xslt_target_retargeted` | `save_through_xslt_target_changed` | block |
+| `binding.attached_custom_xml_schema_namespace_changed` | `attached_custom_xml_schema_namespace_changed` | review |
 | `external.subdocument_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.frameset_source_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.vml_linked_ole_object_target_retargeted` | `vml_linked_ole_object_target_changed` | block |
@@ -79,7 +80,7 @@ Version 0.18 adds an enabled single-XML-save XSLT transform boundary while retai
 
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro, embedded-OLE, and ActiveX persistence bytes are inert text markers, not valid executable, OLE, or control payloads. The public truth files deliberately exclude:
 
-- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, payload bytes, and payload fingerprints;
 - protection hashes, salts, passwords, and document content outside the fixed synthetic text.
 
@@ -98,6 +99,8 @@ An embedded [`w:control`](https://learn.microsoft.com/en-us/dotnet/api/documentf
 Mail-merge recipient selection is separate from retargeting a data source. Microsoft's [Mail Merge Recipient Data Part contract](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/af3dc913-8c08-4843-ab40-495a92170b96) specifies one internally related recipient-data part from Document Settings, its `w:recipients` root, and no relationships from that part. Its [`w:active` definition](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/7bbd9fb1-6181-481d-b29c-63842301455d) says a false value excludes the corresponding external record from a merge. DCAB fixes one synthetic external text source, the settings markup, the settings relationships, the content type, the recipient record hash, and package membership while changing only the stored `false`/`true` inclusion state. It does not retrieve or parse the source, identify a real record, perform a merge, or claim client behavior.
 
 Microsoft's [`w:saveThroughXslt` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.savethroughxslt?view=openxml-3.0.1) describes a custom XSL transform used when saving a document as a single XML file, and [`w:useXSLTWhenSaving`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.usexsltwhensaving?view=openxml-3.0.1) controls whether the transform is applied. DCAB fixes the enabled marker, transform anchor, standard external relationship type, relationship ID, and package membership while changing only the synthetic target. It does not fetch, parse, or execute an XSL transform, save a document through one, or make a claim about emitted XML or client behavior.
+
+Microsoft's [`w:attachedSchema` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.attachedschema?view=openxml-3.0.1) specifies a custom XML schema target-namespace association that a host may use when it loads a document if the matching schema is available. DCAB fixes one direct Settings leaf and all package members while changing only its synthetic namespace value. The value is an opaque declaration, not an OPC relationship or a fetch request: the pair does not locate, retrieve, load, or validate against a schema and makes no host-validation claim. Released DocFence 0.29 reports the same-count change through an aggregate-only inventory without exposing the namespace value.
 
 Complex Word fields are a distinct parser boundary from `w:fldSimple`. Microsoft's [`w:fldChar` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldchar?view=openxml-3.0.1) defines the required begin/end markers and optional separator, while its [`w:instrText` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.fieldcode?view=openxml-3.0.1) says instruction text is field code only when it occurs in the code portion of a complex field. DCAB fixes one complete `INCLUDETEXT` field with a begin marker, three preserved-whitespace instruction runs that split the keyword itself, a separator, a fixed result, and an end marker. Only the private source fragment changes. It does not resolve or import the source, update/evaluate a field, open Word, or claim a client will process the instruction.
 

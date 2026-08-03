@@ -404,6 +404,16 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         return observed, _evidence(
             "external_relationships_changed", "save_through_xslt_inventory_changed"
         )
+    if kind == "attached_custom_xml_schema_namespace_changed":
+        observed = _has_changes(
+            report, "attached_custom_xml_schema_inventory_changed"
+        ) and _same_count(
+            report,
+            "attached_custom_xml_schemas",
+            "attached_custom_xml_schema_count",
+            1,
+        )
+        return observed, _evidence("attached_custom_xml_schema_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

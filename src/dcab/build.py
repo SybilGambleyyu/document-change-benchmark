@@ -161,6 +161,12 @@ _MAIL_MERGE_SOURCE_CANDIDATE = "https://candidate.example.invalid/dcab-mail-merg
 _MAIL_MERGE_RECIPIENT_HASH = "148730921"
 _SAVE_THROUGH_XSLT_APPROVED = "https://approved.example.invalid/dcab-transform.xslt"
 _SAVE_THROUGH_XSLT_CANDIDATE = "https://candidate.example.invalid/dcab-transform.xslt"
+_ATTACHED_CUSTOM_XML_SCHEMA_APPROVED = (
+    "https://approved.example.invalid/dcab-attached-custom-xml-schema"
+)
+_ATTACHED_CUSTOM_XML_SCHEMA_CANDIDATE = (
+    "https://candidate.example.invalid/dcab-attached-custom-xml-schema"
+)
 _SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
 _SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
 _FRAME_SOURCE_APPROVED = "https://approved.example.invalid/dcab-frame.docx"
@@ -223,6 +229,7 @@ class DocumentVariant:
     mail_merge_data_source_target: str | None = None
     mail_merge_recipient_active: bool | None = None
     save_through_xslt_target: str | None = None
+    attached_custom_xml_schema_namespace: str | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -509,6 +516,27 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(save_through_xslt_target=_SAVE_THROUGH_XSLT_APPROVED),
         candidate=DocumentVariant(save_through_xslt_target=_SAVE_THROUGH_XSLT_CANDIDATE),
         changed_members=("word/_rels/settings.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="binding.attached_custom_xml_schema_namespace_changed",
+        title="Attached custom XML schema namespace changed",
+        description=(
+            "A fixed Word Settings attached-schema declaration retains its element shape "
+            "while its private target-namespace value changes."
+        ),
+        fact={
+            "binding": "custom_xml_schema",
+            "kind": "attached_custom_xml_schema_namespace_changed",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(
+            attached_custom_xml_schema_namespace=_ATTACHED_CUSTOM_XML_SCHEMA_APPROVED
+        ),
+        candidate=DocumentVariant(
+            attached_custom_xml_schema_namespace=_ATTACHED_CUSTOM_XML_SCHEMA_CANDIDATE
+        ),
+        changed_members=("word/settings.xml",),
     ),
     CaseSpec(
         case_id="external.subdocument_target_retargeted",
@@ -938,6 +966,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("mail-merge recipient data requires a data-source target")
     if variant.save_through_xslt_target is not None and not variant.save_through_xslt_target:
         raise FixtureBuildError("save-through-XSLT target cannot be empty")
+    if (
+        variant.attached_custom_xml_schema_namespace is not None
+        and not variant.attached_custom_xml_schema_namespace
+    ):
+        raise FixtureBuildError("attached custom XML schema namespace cannot be empty")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1474,6 +1507,11 @@ def _linked_picture_markup() -> str:
 
 
 def _settings_xml(variant: DocumentVariant) -> bytes:
+    attached_custom_xml_schema = (
+        _attached_custom_xml_schema_markup(variant.attached_custom_xml_schema_namespace)
+        if variant.attached_custom_xml_schema_namespace is not None
+        else ""
+    )
     attached_template = (
         '<w:attachedTemplate r:id="rIdAttachedTemplate"/>'
         if variant.attached_template_target is not None
@@ -1502,7 +1540,8 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
-        f"{attached_template}{mail_merge}{track_revisions}{protection}{save_through_xslt}"
+        f"{attached_custom_xml_schema}{attached_template}{mail_merge}{track_revisions}"
+        f"{protection}{save_through_xslt}"
         f"{document_variables}"
         "</w:settings>"
     ).encode()
@@ -1547,6 +1586,17 @@ def _save_through_xslt_markup() -> str:
     """
 
     return '<w:useXSLTWhenSaving w:val="true"/><w:saveThroughXslt r:id="rIdSaveThroughXslt"/>'
+
+
+def _attached_custom_xml_schema_markup(namespace: str) -> str:
+    """Return one direct custom-XML-schema namespace association.
+
+    ``w:attachedSchema`` stores a target namespace, not an OPC relationship or
+    a request to retrieve a schema. The generated fixture keeps that opaque
+    declaration local and does not load or validate against it.
+    """
+
+    return f'<w:attachedSchema w:val="{html.escape(namespace, quote=True)}"/>'
 
 
 def _document_variables_markup(value: str) -> str:

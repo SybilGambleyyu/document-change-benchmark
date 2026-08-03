@@ -1122,6 +1122,9 @@ def _validate_settings(
     mail_merges = list(root.iter(_word_tag("mailMerge")))
     use_xslt_when_saving = list(root.iter(_word_tag("useXSLTWhenSaving")))
     save_through_xslt = list(root.iter(_word_tag("saveThroughXslt")))
+    attached_custom_xml_schemas = [
+        element for element in root if element.tag == _word_tag("attachedSchema")
+    ]
     document_variable_containers = [
         element for element in root if element.tag == _word_tag("docVars")
     ]
@@ -1142,8 +1145,22 @@ def _validate_settings(
         _invalid(spec, f"{side} save-through-XSLT enablement setting is invalid")
     if len(save_through_xslt) != int(variant.save_through_xslt_target is not None):
         _invalid(spec, f"{side} save-through-XSLT anchor is invalid")
+    if len(attached_custom_xml_schemas) != int(
+        variant.attached_custom_xml_schema_namespace is not None
+    ):
+        _invalid(spec, f"{side} attached custom XML schema setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
+    if attached_custom_xml_schemas:
+        attached_schema = attached_custom_xml_schemas[0]
+        if (
+            attached_schema.attrib
+            != {_word_tag("val"): variant.attached_custom_xml_schema_namespace}
+            or list(attached_schema)
+            or (attached_schema.text or "").strip()
+            or (attached_schema.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} attached custom XML schema setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():

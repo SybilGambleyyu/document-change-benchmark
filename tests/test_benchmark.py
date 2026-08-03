@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 29,
-        "fact_count": 29,
+        "case_count": 30,
+        "fact_count": 30,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 29, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 30, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 56
-    assert loaded_package_count == 58
+    assert loaded_document_count == 58
+    assert loaded_package_count == 60
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -138,6 +138,52 @@ def test_save_through_xslt_pair_has_a_fixed_anchor_and_one_target_boundary() -> 
     assert baseline_relationship.get("TargetMode") == "External"
     assert candidate_relationship.get("TargetMode") == "External"
     assert baseline_relationship.get("Target") != candidate_relationship.get("Target")
+
+
+def test_attached_custom_xml_schema_pair_has_one_namespace_boundary() -> None:
+    """Only the private attached-schema namespace value changes."""
+
+    case = FIXTURES / "binding.attached_custom_xml_schema_namespace_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/settings.xml"
+        ]
+        assert "word/_rels/settings.xml.rels" not in members
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_settings = baseline.read("word/settings.xml")
+        candidate_settings = candidate.read("word/settings.xml")
+        baseline_root = ET.fromstring(baseline_settings)
+        candidate_root = ET.fromstring(candidate_settings)
+
+    assert (
+        candidate_settings.replace(
+            b"https://candidate.example.invalid/dcab-attached-custom-xml-schema",
+            b"https://approved.example.invalid/dcab-attached-custom-xml-schema",
+            1,
+        )
+        == baseline_settings
+    )
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    schema_tag = f"{{{word_namespace}}}attachedSchema"
+    value_attribute = f"{{{word_namespace}}}val"
+    assert [child.tag for child in baseline_root] == [schema_tag]
+    assert [child.tag for child in candidate_root] == [schema_tag]
+    assert baseline_root[0].attrib == {
+        value_attribute: "https://approved.example.invalid/dcab-attached-custom-xml-schema"
+    }
+    assert candidate_root[0].attrib == {
+        value_attribute: "https://candidate.example.invalid/dcab-attached-custom-xml-schema"
+    }
+    assert [node.text for node in baseline_root.iter(f"{{{word_namespace}}}t")] == []
+    assert [
+        node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
+    ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]
 
 
 def test_mail_merge_recipient_active_pair_has_a_fixed_topology_and_one_state_boundary() -> None:
@@ -1082,6 +1128,7 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "approved-source.xlsx",
         "candidate-source.xlsx",
         "dcab-transform.xslt",
+        "dcab-attached-custom-xml-schema",
         "Sheet1!R1C1",
         "DDE DCAB",
         "DCABReviewState",
