@@ -1,0 +1,23 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "A normal run is wrapped in external relationship-backed w:hyperlink markup without changing its stored display text.",
+  "facts": [
+    {
+      "binding": "external",
+      "kind": "word_hyperlink_added",
+      "relationship_category": "hyperlink",
+      "source": "word_hyperlink"
+    }
+  ],
+  "id": "interaction.word_hyperlink_added",
+  "invariants": {
+    "changed_member_count": 2,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "block",
+  "schema_version": 1,
+  "title": "Direct Word hyperlink added"
+}

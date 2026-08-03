@@ -1,0 +1,22 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "A complete simple HYPERLINK field retains its stored result text while its private field instruction destination changes.",
+  "facts": [
+    {
+      "field_kind": "hyperlink",
+      "kind": "field_target_changed",
+      "source": "word_field"
+    }
+  ],
+  "id": "interaction.word_hyperlink_field_target_retargeted",
+  "invariants": {
+    "changed_member_count": 1,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "block",
+  "schema_version": 1,
+  "title": "HYPERLINK field target retargeted"
+}

@@ -1,0 +1,20 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "A content control's mapping stays fixed while the referenced synthetic custom XML payload changes.",
+  "facts": [
+    {
+      "kind": "custom_xml_payload_changed"
+    }
+  ],
+  "id": "binding.custom_xml_payload_changed",
+  "invariants": {
+    "changed_member_count": 1,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "review",
+  "schema_version": 1,
+  "title": "Bound custom XML payload changed"
+}

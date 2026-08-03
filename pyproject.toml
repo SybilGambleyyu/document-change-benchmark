@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "document-change-benchmark"
+version = "0.1.0"
+description = "Reproducible paired-WordprocessingML fixtures for static change-assurance tools."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "SybilGambleyyu" }]
+keywords = ["benchmark", "ci", "docm", "docx", "ooxml", "privacy", "word", "wordprocessingml"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["build>=1.2,<2", "python-docx>=1.0,<2", "pytest>=8,<10", "ruff>=0.8,<1", "twine>=6,<7"]
+
+[project.scripts]
+dcab = "dcab.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SybilGambleyyu/document-change-benchmark"
+Repository = "https://github.com/SybilGambleyyu/document-change-benchmark"
+Issues = "https://github.com/SybilGambleyyu/document-change-benchmark/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dcab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]

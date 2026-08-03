@@ -1,0 +1,20 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "A run keeps the same stored text while direct w:vanish markup is introduced.",
+  "facts": [
+    {
+      "kind": "hidden_text_run_added"
+    }
+  ],
+  "id": "review.hidden_text_run_added",
+  "invariants": {
+    "changed_member_count": 1,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "review",
+  "schema_version": 1,
+  "title": "Direct hidden-text run added"
+}
