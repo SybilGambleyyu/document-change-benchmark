@@ -15,6 +15,8 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from .build import (
+    _ALT_CHUNK_CONTENT_TYPE,
+    _ALT_CHUNK_RELATIONSHIP,
     _ATTACHED_TEMPLATE_RELATIONSHIP,
     _CONTENT_TYPES_NS,
     _CUSTOM_XML_PROPERTIES_CONTENT_TYPE,
@@ -148,6 +150,8 @@ def _validate_package(
         expected_members.add("word/vbaProject.bin")
     if variant.embedded_payload is not None:
         expected_members.add("word/embeddings/oleObject1.bin")
+    if variant.alternative_format_import_payload is not None:
+        expected_members.add("word/afchunk1.html")
     if variant.attached_template_target is not None:
         expected_members.add("word/_rels/settings.xml.rels")
     if set(members) != expected_members:
@@ -157,6 +161,7 @@ def _validate_package(
     _validate_root_relationships(members, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
+    _validate_alternative_format_import(members, variant, spec, side)
     _validate_settings(members, variant, spec, side)
     _validate_settings_relationships(members, variant, spec, side)
     _validate_styles(members, spec, side)
@@ -205,6 +210,8 @@ def _validate_content_types(
     }
     if variant.custom_xml_payload is not None:
         expected["/customXml/itemProps1.xml"] = _CUSTOM_XML_PROPERTIES_CONTENT_TYPE
+    if variant.alternative_format_import_payload is not None:
+        expected["/word/afchunk1.html"] = _ALT_CHUNK_CONTENT_TYPE
     if variant.macro_payload is not None:
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
@@ -262,6 +269,8 @@ def _validate_document_relationships(
             variant.subdocument_target,
             "external",
         )
+    if variant.alternative_format_import_payload is not None:
+        expected["rIdAltChunk"] = (_ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "internal")
     if variant.custom_xml_payload is not None:
         expected["rIdCustomXml"] = (_CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "internal")
     if variant.macro_payload is not None:
@@ -291,6 +300,12 @@ def _validate_document_xml(
         _invalid(spec, f"{side} subdocument markup is invalid")
     if subdocuments and subdocuments[0].get(f"{{{_REL_NS}}}id") != "rIdSubDocument":
         _invalid(spec, f"{side} subdocument relationship is invalid")
+
+    alt_chunks = [element for element in body if element.tag == _word_tag("altChunk")]
+    if len(alt_chunks) != int(variant.alternative_format_import_payload is not None):
+        _invalid(spec, f"{side} alternative-format import markup is invalid")
+    if alt_chunks and alt_chunks[0].get(f"{{{_REL_NS}}}id") != "rIdAltChunk":
+        _invalid(spec, f"{side} alternative-format import relationship is invalid")
 
     hyperlinks = list(root.iter(_word_tag("hyperlink")))
     expected_hyperlink_count = 1 if variant.direct_hyperlink_target is not None else 0
@@ -369,6 +384,15 @@ def _validate_document_xml(
         _invalid(spec, f"{side} embedded OLE marker is invalid")
     if ole_markers and ole_markers[0].get(f"{{{_REL_NS}}}id") != "rIdOleObject":
         _invalid(spec, f"{side} embedded OLE relationship is invalid")
+
+
+def _validate_alternative_format_import(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    if variant.alternative_format_import_payload is None:
+        return
+    if members["word/afchunk1.html"] != variant.alternative_format_import_payload:
+        _invalid(spec, f"{side} alternative-format import payload is invalid")
 
 
 def _validate_settings(
@@ -524,12 +548,14 @@ def _validate_public_truth(truth: dict[str, Any], spec: CaseSpec) -> None:
         "rIdAttachedTemplate",
         "rIdSubDocument",
         "rIdLinkedPicture",
+        "rIdAltChunk",
         "rIdVbaProject",
         "rIdOleObject",
         "vbaProject.bin",
         "oleObject1.bin",
         "urn:dcab:fixture",
         "DCAB inert",
+        "DCAB synthetic alternate-content",
     )
     if any(value in encoded for value in forbidden):
         _invalid(spec, "public truth contains private fixture material")

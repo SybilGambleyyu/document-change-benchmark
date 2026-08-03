@@ -217,6 +217,24 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         return observed, _evidence(
             "external_relationships_changed", "word_drawing_linked_picture_inventory_changed"
         )
+    if kind == "alternative_format_import_payload_changed":
+        observed = (
+            _has_changes(report, "alternative_format_import_inventory_changed")
+            and _same_count(
+                report,
+                "alternative_format_imports",
+                "alternative_format_import_relationship_count",
+                1,
+            )
+            and _same_count(
+                report,
+                "alternative_format_imports",
+                "alternative_format_import_payload_part_count",
+                1,
+            )
+            and _same_count(report, "alternative_format_import_anchor_count", None, 1)
+        )
+        return observed, _evidence("alternative_format_import_inventory_changed")
     if kind == "hidden_text_run_added":
         observed = _has_changes(report, "hidden_text_inventory_changed") and _count_pair(
             report, "hidden_text_run_count", None, 0, 1

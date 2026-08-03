@@ -44,6 +44,7 @@ _SETTINGS_CONTENT_TYPE = (
 _CUSTOM_XML_PROPERTIES_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.customXmlProperties+xml"
 )
+_ALT_CHUNK_CONTENT_TYPE = "text/html"
 _VBA_PROJECT_CONTENT_TYPE = "application/vnd.ms-office.vbaProject"
 _OLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.oleObject"
 
@@ -54,6 +55,7 @@ _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
 _ATTACHED_TEMPLATE_RELATIONSHIP = f"{_REL_NS}/attachedTemplate"
 _SUBDOCUMENT_RELATIONSHIP = f"{_REL_NS}/subDocument"
 _IMAGE_RELATIONSHIP = f"{_REL_NS}/image"
+_ALT_CHUNK_RELATIONSHIP = f"{_REL_NS}/afChunk"
 _CUSTOM_XML_RELATIONSHIP = f"{_REL_NS}/customXml"
 _CUSTOM_XML_PROPERTIES_RELATIONSHIP = f"{_REL_NS}/customXmlProps"
 _VBA_PROJECT_RELATIONSHIP = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
@@ -80,6 +82,10 @@ _SUBDOCUMENT_APPROVED = "https://approved.example.invalid/dcab-subdocument.docx"
 _SUBDOCUMENT_CANDIDATE = "https://candidate.example.invalid/dcab-subdocument.docx"
 _LINKED_PICTURE_APPROVED = "https://approved.example.invalid/dcab-linked-picture.png"
 _LINKED_PICTURE_CANDIDATE = "https://candidate.example.invalid/dcab-linked-picture.png"
+_ALT_CHUNK_APPROVED = b"<html><body>DCAB synthetic alternate-content marker: approved</body></html>"
+_ALT_CHUNK_CANDIDATE = (
+    b"<html><body>DCAB synthetic alternate-content marker: candidate</body></html>"
+)
 _BINDING_XPATH_APPROVED = "/dcab:fixture/dcab:approved"
 _BINDING_XPATH_CANDIDATE = "/dcab:fixture/dcab:candidate"
 _CUSTOM_XML_APPROVED = (
@@ -111,6 +117,7 @@ class DocumentVariant:
     attached_template_target: str | None = None
     subdocument_target: str | None = None
     drawing_linked_picture_target: str | None = None
+    alternative_format_import_payload: bytes | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -267,6 +274,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(drawing_linked_picture_target=_LINKED_PICTURE_APPROVED),
         candidate=DocumentVariant(drawing_linked_picture_target=_LINKED_PICTURE_CANDIDATE),
         changed_members=("word/_rels/document.xml.rels",),
+    ),
+    CaseSpec(
+        case_id="import.alternative_format_html_payload_changed",
+        title="Alternative-format HTML import payload changed",
+        description=(
+            "A w:altChunk anchor and internal afChunk relationship retain their shape while "
+            "the synthetic HTML import payload changes."
+        ),
+        fact={
+            "kind": "alternative_format_import_payload_changed",
+            "payload_kind": "html",
+            "source": "word_alt_chunk",
+        },
+        review_expectation="block",
+        baseline=DocumentVariant(alternative_format_import_payload=_ALT_CHUNK_APPROVED),
+        candidate=DocumentVariant(alternative_format_import_payload=_ALT_CHUNK_CANDIDATE),
+        changed_members=("word/afchunk1.html",),
     ),
     CaseSpec(
         case_id="review.hidden_text_run_added",
@@ -431,6 +455,8 @@ def render_package(variant: DocumentVariant) -> bytes:
     }
     if variant.attached_template_target is not None:
         members["word/_rels/settings.xml.rels"] = _settings_relationships(variant)
+    if variant.alternative_format_import_payload is not None:
+        members["word/afchunk1.html"] = variant.alternative_format_import_payload
     if variant.custom_xml_payload is not None:
         members.update(
             {
@@ -500,6 +526,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if (
+        variant.alternative_format_import_payload is not None
+        and not variant.alternative_format_import_payload
+    ):
+        raise FixtureBuildError("alternative-format import payload cannot be empty")
+    if (
         variant.drawing_linked_picture_target is not None
         and not variant.drawing_linked_picture_target
     ):
@@ -541,6 +572,8 @@ def _content_types(variant: DocumentVariant) -> bytes:
     ]
     if variant.custom_xml_payload is not None:
         overrides.append(("/customXml/itemProps1.xml", _CUSTOM_XML_PROPERTIES_CONTENT_TYPE))
+    if variant.alternative_format_import_payload is not None:
+        overrides.append(("/word/afchunk1.html", _ALT_CHUNK_CONTENT_TYPE))
     if variant.macro_payload is not None:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
@@ -591,6 +624,8 @@ def _document_relationships(variant: DocumentVariant) -> bytes:
         relationships.append(
             ("rIdSubDocument", _SUBDOCUMENT_RELATIONSHIP, variant.subdocument_target, "External")
         )
+    if variant.alternative_format_import_payload is not None:
+        relationships.append(("rIdAltChunk", _ALT_CHUNK_RELATIONSHIP, "afchunk1.html", "Internal"))
     if variant.custom_xml_payload is not None:
         relationships.append(
             ("rIdCustomXml", _CUSTOM_XML_RELATIONSHIP, "../customXml/item1.xml", "Internal")
@@ -657,6 +692,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     subdocument_markup = (
         '<w:subDoc r:id="rIdSubDocument"/>' if variant.subdocument_target is not None else ""
     )
+    alt_chunk_markup = (
+        '<w:altChunk r:id="rIdAltChunk"/>'
+        if variant.alternative_format_import_payload is not None
+        else ""
+    )
     value = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}" '
@@ -664,7 +704,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{hyperlink_field_markup}{include_field_markup}"
         f"{hidden_markup}{revision_markup}{binding_markup}{ole_markup}{linked_picture_markup}"
-        f'</w:p>{subdocument_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
     )
