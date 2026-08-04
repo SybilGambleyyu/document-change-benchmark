@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 35,
-        "fact_count": 35,
+        "case_count": 36,
+        "fact_count": 36,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 35, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 36, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 68
-    assert loaded_package_count == 70
+    assert loaded_document_count == 70
+    assert loaded_package_count == 72
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -291,6 +291,52 @@ def test_package_thumbnail_pair_has_one_opaque_payload_boundary() -> None:
     assert baseline_thumbnail != candidate_thumbnail
     assert _decode_synthetic_thumbnail(baseline_thumbnail) == (0x12, 0x34, 0x56)
     assert _decode_synthetic_thumbnail(candidate_thumbnail) == (0x65, 0x43, 0x21)
+
+
+def test_markup_compatibility_pair_has_one_choice_requirement_boundary() -> None:
+    """Only the static MCE Choice requirement changes; neither branch is selected."""
+
+    case = FIXTURES / "review.markup_compatibility_choice_requirement_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_root = ET.fromstring(baseline_document)
+        candidate_root = ET.fromstring(candidate_document)
+
+    markup_compatibility_namespace = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    assert b'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"' in (
+        baseline_document
+    )
+    assert b'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"' in (
+        baseline_document
+    )
+    assert b'xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"' in (
+        baseline_document
+    )
+    assert candidate_document.replace(b'Requires="w15"', b'Requires="w14"', 1) == (
+        baseline_document
+    )
+    baseline_choices = list(baseline_root.iter(f"{{{markup_compatibility_namespace}}}Choice"))
+    candidate_choices = list(candidate_root.iter(f"{{{markup_compatibility_namespace}}}Choice"))
+    assert len(baseline_choices) == len(candidate_choices) == 1
+    assert baseline_choices[0].attrib == {"Requires": "w14"}
+    assert candidate_choices[0].attrib == {"Requires": "w15"}
+    assert (
+        len(list(baseline_root.iter(f"{{{markup_compatibility_namespace}}}AlternateContent"))) == 1
+    )
+    assert len(list(baseline_root.iter(f"{{{markup_compatibility_namespace}}}Fallback"))) == 1
+    assert [node.text for node in baseline_root.iter(f"{{{word_namespace}}}t")] == [
+        node.text for node in candidate_root.iter(f"{{{word_namespace}}}t")
+    ]
 
 
 def test_field_recalculation_on_open_pair_has_one_boolean_boundary() -> None:
@@ -1346,6 +1392,10 @@ def test_public_truth_excludes_generated_sensitive_material() -> None:
         "urn:dcab:fixture",
         "DCAB inert",
         "DCAB synthetic alternate-content",
+        "DCAB markup-compatibility choice carrier",
+        "DCAB markup-compatibility fallback carrier",
+        "w14",
+        "w15",
         "approved-source.xlsx",
         "candidate-source.xlsx",
         "dcab-transform.xslt",

@@ -762,6 +762,57 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("package_thumbnail_inventory_changed")
+    if kind == "markup_compatibility_choice_requirement_changed":
+        observed = _has_changes(report, "markup_compatibility_inventory_changed") and all(
+            (
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "markup_compatibility_part_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "alternate_content_count",
+                    1,
+                ),
+                _same_count(report, "markup_compatibility", "choice_count", 1),
+                _same_count(report, "markup_compatibility", "fallback_count", 1),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "choice_requires_prefix_count",
+                    1,
+                ),
+                _same_count(report, "markup_compatibility", "ignorable_prefix_count", 0),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "must_understand_prefix_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "process_content_name_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "preserve_element_name_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "markup_compatibility",
+                    "preserve_attribute_name_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("markup_compatibility_inventory_changed")
     if kind == "macro_payload_changed":
         observed = _has_changes(report, "macro_payload_changed") and _count_pair(
             report, "macro_present", None, True, True

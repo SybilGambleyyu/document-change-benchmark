@@ -28,6 +28,8 @@ _REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _WORD_2010_WORDML_NS = "http://schemas.microsoft.com/office/word/2010/wordml"
 _WORD_2012_WORDML_NS = "http://schemas.microsoft.com/office/word/2012/wordml"
+_MARKUP_COMPATIBILITY_NAMESPACE = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+_MARKUP_COMPATIBILITY_REQUIRES_PREFIXES = frozenset({"w14", "w15"})
 _DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 _WORDPROCESSING_DRAWING_NS = (
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
@@ -124,6 +126,8 @@ _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
 _BINDING_TEXT = "DCAB bound-content carrier"
+_MARKUP_COMPATIBILITY_CHOICE_TEXT = "DCAB markup-compatibility choice carrier"
+_MARKUP_COMPATIBILITY_FALLBACK_TEXT = "DCAB markup-compatibility fallback carrier"
 _CUSTOM_XML_STORE_ID = "{3B1F8916-697D-4C4E-A4A1-55F64D9F2A80}"
 
 _DIRECT_LINK_APPROVED = "https://approved.example.invalid/dcab-hyperlink"
@@ -296,6 +300,7 @@ class DocumentVariant:
     drawing_linked_picture_target: str | None = None
     alternative_format_import_payload: bytes | None = None
     thumbnail_payload: bytes | None = None
+    markup_compatibility_choice_requires: str | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -873,6 +878,20 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("docProps/thumbnail.png",),
     ),
     CaseSpec(
+        case_id="review.markup_compatibility_choice_requirement_changed",
+        title="OOXML Markup Compatibility choice requirement changed",
+        description=(
+            "A stored Markup Compatibility AlternateContent node retains its Choice, "
+            "Fallback, package-member set, and stored Word text while its required-feature "
+            "prefix changes."
+        ),
+        fact={"kind": "markup_compatibility_choice_requirement_changed"},
+        review_expectation="review",
+        baseline=DocumentVariant(markup_compatibility_choice_requires="w14"),
+        candidate=DocumentVariant(markup_compatibility_choice_requires="w15"),
+        changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
         case_id="macro.vba_project_payload_changed",
         title="VBA project payload changed",
         description=(
@@ -1147,6 +1166,12 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("ActiveX persistence payload cannot be empty")
     if variant.thumbnail_payload is not None and not variant.thumbnail_payload:
         raise FixtureBuildError("package thumbnail payload cannot be empty")
+    if (
+        variant.markup_compatibility_choice_requires is not None
+        and variant.markup_compatibility_choice_requires
+        not in _MARKUP_COMPATIBILITY_REQUIRES_PREFIXES
+    ):
+        raise FixtureBuildError("markup-compatibility Choice requirement is unsupported")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -1397,6 +1422,13 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.drawing_linked_picture_target is not None
         else ""
     )
+    markup_compatibility_namespaces = (
+        f' xmlns:mc="{_MARKUP_COMPATIBILITY_NAMESPACE}" '
+        f'xmlns:w14="{_WORD_2010_WORDML_NS}" '
+        f'xmlns:w15="{_WORD_2012_WORDML_NS}"'
+        if variant.markup_compatibility_choice_requires is not None
+        else ""
+    )
     hyperlink_run = _run(_HYPERLINK_DISPLAY_TEXT)
     hyperlink_markup = (
         f'<w:hyperlink r:id="rIdHyperlink">{hyperlink_run}</w:hyperlink>'
@@ -1448,6 +1480,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         else revision_run
     )
     binding_markup = _binding_markup(variant.data_binding_xpath)
+    markup_compatibility_markup = (
+        _markup_compatibility_markup(variant.markup_compatibility_choice_requires)
+        if variant.markup_compatibility_choice_requires is not None
+        else ""
+    )
     ole_markup = _ole_markup() if variant.embedded_payload is not None else ""
     active_x_markup = _active_x_markup() if variant.activex_persistence_payload is not None else ""
     linked_ole_markup = _linked_ole_markup() if variant.vml_linked_ole_target is not None else ""
@@ -1465,12 +1502,14 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     value = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:document xmlns:w="{_WORD_NS}" xmlns:r="{_REL_NS}" '
-        f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}>'
+        f'xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_VML_NS}"{drawing_namespaces}'
+        f"{markup_compatibility_namespaces}>"
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{vml_shape_hyperlink_markup}"
         f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
-        f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}{binding_markup}"
+        f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}"
+        f"{markup_compatibility_markup}{binding_markup}"
         f"{ole_markup}{active_x_markup}{linked_ole_markup}{linked_picture_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
@@ -1481,6 +1520,19 @@ def _document_xml(variant: DocumentVariant) -> bytes:
 
 def _run(text: str) -> str:
     return f"<w:r><w:t>{html.escape(text)}</w:t></w:r>"
+
+
+def _markup_compatibility_markup(requires: str) -> str:
+    """Return one static MCE choice/fallback shape without selecting either branch."""
+
+    return (
+        "<mc:AlternateContent>"
+        f'<mc:Choice Requires="{html.escape(requires, quote=True)}">'
+        f"{_run(_MARKUP_COMPATIBILITY_CHOICE_TEXT)}"
+        "</mc:Choice>"
+        f"<mc:Fallback>{_run(_MARKUP_COMPATIBILITY_FALLBACK_TEXT)}</mc:Fallback>"
+        "</mc:AlternateContent>"
+    )
 
 
 def _simple_field(instruction: str, result: str) -> str:

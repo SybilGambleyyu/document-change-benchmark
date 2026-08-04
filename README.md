@@ -1,8 +1,8 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty-five paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty-six paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
-It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
+It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, OOXML Markup Compatibility choice requirements, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, instantiates an ActiveX control, or executes code.
 
@@ -37,7 +37,17 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the thirty-five cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the thirty-six cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+
+Version 0.25 adds an OOXML Markup Compatibility (MCE) choice-requirement pair.
+Both sides retain one `mc:AlternateContent`, one `mc:Choice`, one
+`mc:Fallback`, the same member set, and the same stored Word text; only the
+private `Choice/@Requires` prefix changes. The pair does not validate MCE
+conformance, resolve a feature prefix, choose a branch, preprocess or save a
+package, or claim that a client will load or render either branch. Fixture
+schema version 1 and the truth and observation envelopes are unchanged. An
+earlier observation can still be parsed, but it is incomplete when scored
+against this thirty-six-case catalogue.
 
 Version 0.24 adds a relationship-bound OPC package-thumbnail payload pair. Both
 sides retain the same standard root relationship, `image/png` content type,
@@ -86,6 +96,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 | `binding.custom_xml_payload_changed` | `custom_xml_payload_changed` | review |
 | `review.unbound_custom_xml_payload_changed` | `unbound_custom_xml_payload_changed` | review |
 | `review.package_thumbnail_payload_changed` | `package_thumbnail_payload_changed` | review |
+| `review.markup_compatibility_choice_requirement_changed` | `markup_compatibility_choice_requirement_changed` | review |
 | `macro.vba_project_payload_changed` | `macro_payload_changed` | block |
 | `embedded.ole_payload_changed` | `embedded_ole_payload_changed` | block |
 | `embedded.activex_control_persistence_payload_changed` | `activex_control_persistence_payload_changed` | block |
@@ -97,7 +108,9 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro, embedded-OLE, and ActiveX persistence bytes are inert text markers, not valid executable, OLE, or control payloads. The package-thumbnail pair uses deterministic fully synthetic 1×1 PNG bytes; construction and validation treat them as opaque and never decode or render them. The public truth files deliberately exclude:
 
 - targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles` and `w:removePersonalInformation` serialization values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, thumbnail relationship sources/targets, content types, and part paths, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
-- custom XML values, thumbnail image bytes, opaque payload bytes, and payload fingerprints;
+- custom XML values, thumbnail image bytes, Markup Compatibility branch bodies,
+  feature-prefix and qualified-name values, compatibility-rule values, opaque
+  payload bytes, and payload fingerprints;
 - protection hashes, salts, passwords, and document content outside the fixed synthetic text.
 
 The structural verifier compares generated bytes, validates ZIP/XML/package invariants, and refuses XML DTD/entity declarations. It does not interpret any stored value beyond the compact fixture contract.
@@ -107,6 +120,8 @@ The structural verifier compares generated bytes, validates ZIP/XML/package inva
 Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its display text to a relationship target. [Microsoft's Open XML API documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.hyperlink?view=openxml-3.0.1) shows that relationship-backed form. Word content controls can bind to custom XML data, so mapping and embedded-data changes are meaningful stored review surfaces. [Microsoft documents those bindings](https://learn.microsoft.com/en-us/visualstudio/vsto/content-controls?view=visualstudio), including their relationship to custom XML parts. But a document can also store a custom XML part without a mapped content control; Microsoft's [Custom XML parts overview](https://learn.microsoft.com/en-us/visualstudio/vsto/custom-xml-parts-overview) says that Office applications can embed and modify those parts independently of a document view. DCAB therefore includes both a bound and an unbound custom-XML payload boundary, without treating either as evidence that a host will display or use the data.
 
 The OOXML [Thumbnail Part contract](https://ooxml.info/docs/15/15.2/15.2.16/) defines an image part reached through a package or part thumbnail relationship, with an internal target and no relationships of its own. The Open XML SDK exposes that surface through [`AddThumbnailPart`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.packaging.wordprocessingdocument.addthumbnailpart?view=openxml-2.20.0). DCAB fixes one standard root thumbnail relationship and `image/png` content type while changing only a fully synthetic 1×1 PNG's opaque bytes. It does not decode, classify, or render an image, or claim it previews the current document or will be shown by a client. Released DocFence 0.34 maps the same payload boundary through an aggregate-only thumbnail inventory.
+
+Microsoft's [introduction to markup compatibility](https://learn.microsoft.com/en-us/office/open-xml/general/introduction-to-markup-compatibility) describes `AlternateContent` as markup alternatives selected by a consumer at runtime according to its processing settings and supported features. DCAB fixes one MCE `Choice`/`Fallback` shape and every branch text value while changing only the one required-feature prefix. It does not resolve that prefix, select a branch, target an Office version, preprocess or save the package, or make a client-rendering claim. DocFence 0.35 maps the same-count private requirement rewrite through an aggregate-only MCE inventory without exposing branch material or the prefix value.
 
 Legacy VML shapes are a separate direct-link surface. Microsoft documents a `v:shape`'s [`href` as a hyperlink target](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.vml.shape?view=openxml-3.0.1), and its Word OOXML guidance explains that Word 2007 continued to use VML for shapes and text boxes. DCAB fixes one compact `w:pict`/`v:rect` shape, its target frame, and its styling attributes while changing only the direct `href`. It does not resolve the URL, select a rendering branch, simulate a click, or claim that any client will follow the link.
 

@@ -53,6 +53,10 @@ from .build import (
     _MAIL_MERGE_RECIPIENT_DATA_RELATIONSHIP,
     _MAIL_MERGE_RECIPIENT_HASH,
     _MAIL_MERGE_SOURCE_RELATIONSHIP,
+    _MARKUP_COMPATIBILITY_CHOICE_TEXT,
+    _MARKUP_COMPATIBILITY_FALLBACK_TEXT,
+    _MARKUP_COMPATIBILITY_NAMESPACE,
+    _MARKUP_COMPATIBILITY_REQUIRES_PREFIXES,
     _MODERN_COMMENT_ANCHOR_TEXT,
     _MODERN_COMMENT_AUTHOR,
     _MODERN_COMMENT_DATE,
@@ -697,6 +701,31 @@ def _validate_document_xml(
             or binding.get(_word_tag("prefixMappings")) is None
         ):
             _invalid(spec, f"{side} data-binding markup is invalid")
+
+    alternate_contents = list(root.iter(f"{{{_MARKUP_COMPATIBILITY_NAMESPACE}}}AlternateContent"))
+    expected_alternate_content_count = int(variant.markup_compatibility_choice_requires is not None)
+    if len(alternate_contents) != expected_alternate_content_count:
+        _invalid(spec, f"{side} markup-compatibility markup is invalid")
+    if alternate_contents:
+        alternate_content = alternate_contents[0]
+        if alternate_content.attrib or len(alternate_content) != 2:
+            _invalid(spec, f"{side} markup-compatibility markup is invalid")
+        choice, fallback = alternate_content
+        if (
+            choice.tag != f"{{{_MARKUP_COMPATIBILITY_NAMESPACE}}}Choice"
+            or choice.attrib != {"Requires": variant.markup_compatibility_choice_requires}
+            or len(choice) != 1
+            or not _is_comment_text_run(choice[0], _MARKUP_COMPATIBILITY_CHOICE_TEXT)
+            or fallback.tag != f"{{{_MARKUP_COMPATIBILITY_NAMESPACE}}}Fallback"
+            or fallback.attrib
+            or len(fallback) != 1
+            or not _is_comment_text_run(fallback[0], _MARKUP_COMPATIBILITY_FALLBACK_TEXT)
+        ):
+            _invalid(spec, f"{side} markup-compatibility markup is invalid")
+        if variant.markup_compatibility_choice_requires not in (
+            _MARKUP_COMPATIBILITY_REQUIRES_PREFIXES
+        ):
+            _invalid(spec, f"{side} markup-compatibility requirement is invalid")
 
     ole_markers = [
         element
