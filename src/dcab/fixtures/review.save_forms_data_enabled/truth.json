@@ -1,0 +1,21 @@
+{
+  "baseline": "baseline.docx",
+  "candidate": "candidate.docx",
+  "coverage_expectations": [],
+  "description": "A direct Settings leaf changes from explicit disabled to enabled while a fixed legacy FORMTEXT field remains stored in both documents. The pair does not open a client or perform a save/export.",
+  "facts": [
+    {
+      "kind": "save_forms_data_enabled",
+      "source": "word_settings"
+    }
+  ],
+  "id": "review.save_forms_data_enabled",
+  "invariants": {
+    "changed_member_count": 1,
+    "package_member_set_stable": true,
+    "stored_text_stable": true
+  },
+  "review_expectation": "review",
+  "schema_version": 1,
+  "title": "Form-data-only save enabled"
+}

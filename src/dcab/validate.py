@@ -41,6 +41,10 @@ from .build import (
     _DRAWING_VISIBILITY_GRAPHIC_DATA_URI,
     _DRAWING_VISIBILITY_OBJECT_ID,
     _DRAWING_VISIBILITY_OBJECT_NAME,
+    _FORM_DATA_FIELD_DEFAULT,
+    _FORM_DATA_FIELD_MAX_LENGTH,
+    _FORM_DATA_FIELD_NAME,
+    _FORM_DATA_FIELD_RESULT,
     _FRAME_LAYOUT,
     _FRAME_NAME,
     _FRAME_RELATIONSHIP,
@@ -607,7 +611,17 @@ def _validate_document_xml(
         if instruction != expected_instruction:
             _invalid(spec, f"{side} field instruction is invalid")
 
-    _validate_complex_include_text_field(root, variant, spec, side)
+    form_data_field_characters, form_data_instruction_texts = _validate_form_data_field(
+        root, variant, spec, side
+    )
+    _validate_complex_include_text_field(
+        root,
+        variant,
+        spec,
+        side,
+        form_data_field_characters=form_data_field_characters,
+        form_data_instruction_texts=form_data_instruction_texts,
+    )
 
     permission_starts = list(root.iter(_word_tag("permStart")))
     permission_ends = list(root.iter(_word_tag("permEnd")))
@@ -956,13 +970,117 @@ def _validate_mail_merge_recipient_data(
         _invalid(spec, f"{side} mail-merge recipient-selection state is invalid")
 
 
-def _validate_complex_include_text_field(
+def _validate_form_data_field(
     root: ET.Element, variant: DocumentVariant, spec: CaseSpec, side: str
+) -> tuple[tuple[ET.Element, ...], tuple[ET.Element, ...]]:
+    """Validate the fixed legacy ``FORMTEXT`` carrier for this Settings case."""
+
+    form_data_nodes = list(root.iter(_word_tag("ffData")))
+    if len(form_data_nodes) != int(variant.save_forms_data is not None):
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    if not form_data_nodes:
+        return (), ()
+
+    form_data = form_data_nodes[0]
+    begin_characters = [
+        character for character in root.iter(_word_tag("fldChar")) if form_data in character
+    ]
+    if len(begin_characters) != 1:
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    begin_character = begin_characters[0]
+    begin_runs = [run for run in root.iter(_word_tag("r")) if begin_character in run]
+    if len(begin_runs) != 1:
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    begin_run = begin_runs[0]
+    paragraphs = [paragraph for paragraph in root.iter(_word_tag("p")) if begin_run in paragraph]
+    if len(paragraphs) != 1:
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    paragraph_children = list(paragraphs[0])
+    begin_index = paragraph_children.index(begin_run)
+    if begin_index + 4 >= len(paragraph_children):
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    field_sequence = paragraph_children[begin_index : begin_index + 5]
+
+    if (
+        begin_run.tag != _word_tag("r")
+        or begin_run.attrib
+        or len(begin_run) != 1
+        or begin_character.tag != _word_tag("fldChar")
+        or begin_character.attrib != {_word_tag("fldCharType"): "begin"}
+        or len(begin_character) != 1
+        or begin_character[0] is not form_data
+        or (begin_run.text or "").strip()
+        or (begin_run.tail or "").strip()
+        or (begin_character.text or "").strip()
+        or (begin_character.tail or "").strip()
+        or form_data.attrib
+        or len(form_data) != 4
+        or (form_data.text or "").strip()
+        or (form_data.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} form-data field markup is invalid")
+    name, enabled, calculate_on_exit, text_input = form_data
+    if not (
+        _is_empty_element(
+            name,
+            _word_tag("name"),
+            {_word_tag("val"): _FORM_DATA_FIELD_NAME},
+        )
+        and _is_empty_element(enabled, _word_tag("enabled"), {})
+        and _is_empty_element(
+            calculate_on_exit,
+            _word_tag("calcOnExit"),
+            {_word_tag("val"): "false"},
+        )
+        and text_input.tag == _word_tag("textInput")
+        and not text_input.attrib
+        and len(text_input) == 2
+        and not (text_input.text or "").strip()
+        and not (text_input.tail or "").strip()
+        and _is_empty_element(
+            text_input[0],
+            _word_tag("default"),
+            {_word_tag("val"): _FORM_DATA_FIELD_DEFAULT},
+        )
+        and _is_empty_element(
+            text_input[1],
+            _word_tag("maxLength"),
+            {_word_tag("val"): _FORM_DATA_FIELD_MAX_LENGTH},
+        )
+        and _is_instruction_text_run(field_sequence[1], " FORMTEXT ")
+        and _is_field_character_run(field_sequence[2], "separate")
+        and _is_comment_text_run(field_sequence[3], _FORM_DATA_FIELD_RESULT)
+        and _is_field_character_run(field_sequence[4], "end")
+    ):
+        _invalid(spec, f"{side} form-data field markup is invalid")
+
+    return (
+        (begin_character, field_sequence[2][0], field_sequence[4][0]),
+        (field_sequence[1][0],),
+    )
+
+
+def _validate_complex_include_text_field(
+    root: ET.Element,
+    variant: DocumentVariant,
+    spec: CaseSpec,
+    side: str,
+    *,
+    form_data_field_characters: tuple[ET.Element, ...],
+    form_data_instruction_texts: tuple[ET.Element, ...],
 ) -> None:
     """Validate one complete, deliberately fragmented complex INCLUDETEXT field."""
 
-    field_characters = list(root.iter(_word_tag("fldChar")))
-    instruction_texts = list(root.iter(_word_tag("instrText")))
+    field_characters = [
+        character
+        for character in root.iter(_word_tag("fldChar"))
+        if character not in form_data_field_characters
+    ]
+    instruction_texts = [
+        instruction
+        for instruction in root.iter(_word_tag("instrText"))
+        if instruction not in form_data_instruction_texts
+    ]
     target = variant.complex_include_text_target
     if target is None:
         if field_characters or instruction_texts:
@@ -1220,6 +1338,9 @@ def _validate_settings(
     personal_information_removals_on_save = [
         element for element in root if element.tag == _word_tag("removePersonalInformation")
     ]
+    save_forms_data_settings = [
+        element for element in root if element.tag == _word_tag("saveFormsData")
+    ]
     attached_custom_xml_schemas = [
         element for element in root if element.tag == _word_tag("attachedSchema")
     ]
@@ -1257,6 +1378,8 @@ def _validate_settings(
         variant.personal_information_removal_on_save is not None
     ):
         _invalid(spec, f"{side} personal-information-removal-on-save setting is invalid")
+    if len(save_forms_data_settings) != int(variant.save_forms_data is not None):
+        _invalid(spec, f"{side} save-forms-data setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if attached_custom_xml_schemas:
@@ -1299,6 +1422,16 @@ def _validate_settings(
             or (personal_information_removal.tail or "").strip()
         ):
             _invalid(spec, f"{side} personal-information-removal-on-save setting is invalid")
+    if save_forms_data_settings:
+        save_forms_data = save_forms_data_settings[0]
+        expected_value = "true" if variant.save_forms_data else "false"
+        if (
+            save_forms_data.attrib != {_word_tag("val"): expected_value}
+            or list(save_forms_data)
+            or (save_forms_data.text or "").strip()
+            or (save_forms_data.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} save-forms-data setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():

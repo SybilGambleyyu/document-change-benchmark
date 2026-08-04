@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 37,
-        "fact_count": 37,
+        "case_count": 38,
+        "fact_count": 38,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 37, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 38, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 72
-    assert loaded_package_count == 74
+    assert loaded_document_count == 74
+    assert loaded_package_count == 76
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -507,6 +507,68 @@ def test_personal_information_removal_on_save_pair_has_one_boolean_boundary() ->
     assert [
         node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
     ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]
+
+
+def test_save_forms_data_pair_has_a_fixed_form_field_and_one_boolean_boundary() -> None:
+    """The legacy FORMTEXT carrier is stable while only the Settings leaf changes."""
+
+    case = FIXTURES / "review.save_forms_data_enabled"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/settings.xml"
+        ]
+        assert "word/_rels/settings.xml.rels" not in members
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_settings = baseline.read("word/settings.xml")
+        candidate_settings = candidate.read("word/settings.xml")
+        baseline_root = ET.fromstring(baseline_settings)
+        candidate_root = ET.fromstring(candidate_settings)
+
+    assert baseline_document == candidate_document
+    assert candidate_settings.replace(b'w:val="true"', b'w:val="false"', 1) == (baseline_settings)
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    setting_tag = f"{{{word_namespace}}}saveFormsData"
+    value_attribute = f"{{{word_namespace}}}val"
+    assert [child.tag for child in baseline_root] == [setting_tag]
+    assert [child.tag for child in candidate_root] == [setting_tag]
+    assert baseline_root[0].attrib == {value_attribute: "false"}
+    assert candidate_root[0].attrib == {value_attribute: "true"}
+    assert not list(baseline_root[0])
+    assert not list(candidate_root[0])
+
+    document_root = ET.fromstring(baseline_document)
+    form_data_nodes = list(document_root.iter(f"{{{word_namespace}}}ffData"))
+    assert len(form_data_nodes) == 1
+    form_data = form_data_nodes[0]
+    assert [child.tag for child in form_data] == [
+        f"{{{word_namespace}}}name",
+        f"{{{word_namespace}}}enabled",
+        f"{{{word_namespace}}}calcOnExit",
+        f"{{{word_namespace}}}textInput",
+    ]
+    assert form_data[0].attrib == {value_attribute: "DCABFormData"}
+    assert form_data[1].attrib == {}
+    assert form_data[2].attrib == {value_attribute: "false"}
+    assert [child.tag for child in form_data[3]] == [
+        f"{{{word_namespace}}}default",
+        f"{{{word_namespace}}}maxLength",
+    ]
+    assert form_data[3][0].attrib == {value_attribute: "DCAB form-data default"}
+    assert form_data[3][1].attrib == {value_attribute: "64"}
+    instruction_texts = list(document_root.iter(f"{{{word_namespace}}}instrText"))
+    assert [node.text for node in instruction_texts] == [" FORMTEXT "]
+    assert instruction_texts[0].attrib == {
+        "{http://www.w3.org/XML/1998/namespace}space": "preserve"
+    }
+    assert [node.text for node in document_root.iter(f"{{{word_namespace}}}t")] == [
+        node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")
+    ]
 
 
 def test_mail_merge_recipient_active_pair_has_a_fixed_topology_and_one_state_boundary() -> None:

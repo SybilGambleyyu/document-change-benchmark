@@ -488,6 +488,26 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("personal_information_removal_on_save_inventory_changed")
+    if kind == "save_forms_data_enabled":
+        observed = _has_changes(report, "save_forms_data_inventory_changed") and all(
+            (
+                _count_pair(
+                    report,
+                    "save_forms_data",
+                    "save_forms_data_enabled_setting_count",
+                    0,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "save_forms_data",
+                    "save_forms_data_disabled_setting_count",
+                    1,
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("save_forms_data_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

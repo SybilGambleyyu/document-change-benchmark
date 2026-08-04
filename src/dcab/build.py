@@ -122,6 +122,10 @@ _HYPERLINK_FIELD_RESULT = "DCAB hyperlink field result"
 _INCLUDE_TEXT_FIELD_RESULT = "DCAB include-text field result"
 _DDE_FIELD_RESULT = "DCAB DDE field result"
 _DOCUMENT_VARIABLE_FIELD_RESULT = "DCAB document-variable field result"
+_FORM_DATA_FIELD_NAME = "DCABFormData"
+_FORM_DATA_FIELD_DEFAULT = "DCAB form-data default"
+_FORM_DATA_FIELD_RESULT = "DCAB form-data field value"
+_FORM_DATA_FIELD_MAX_LENGTH = "64"
 _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
@@ -297,6 +301,7 @@ class DocumentVariant:
     field_recalculation_on_open: bool | None = None
     template_style_update_on_open: bool | None = None
     personal_information_removal_on_save: bool | None = None
+    save_forms_data: bool | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -663,6 +668,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="review",
         baseline=DocumentVariant(personal_information_removal_on_save=False),
         candidate=DocumentVariant(personal_information_removal_on_save=True),
+        changed_members=("word/settings.xml",),
+    ),
+    CaseSpec(
+        case_id="review.save_forms_data_enabled",
+        title="Form-data-only save enabled",
+        description=(
+            "A direct Settings leaf changes from explicit disabled to enabled while a "
+            "fixed legacy FORMTEXT field remains stored in both documents. The pair "
+            "does not open a client or perform a save/export."
+        ),
+        fact={
+            "kind": "save_forms_data_enabled",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(save_forms_data=False),
+        candidate=DocumentVariant(save_forms_data=True),
         changed_members=("word/settings.xml",),
     ),
     CaseSpec(
@@ -1164,6 +1186,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         variant.personal_information_removal_on_save, bool
     ):
         raise FixtureBuildError("personal-information-removal-on-save setting must be boolean")
+    if variant.save_forms_data is not None and not isinstance(variant.save_forms_data, bool):
+        raise FixtureBuildError("save-forms-data setting must be boolean")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1488,6 +1512,9 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         if variant.document_variable_value is not None
         else ""
     )
+    form_data_field_markup = (
+        _form_data_field_markup() if variant.save_forms_data is not None else ""
+    )
     permission_range_markup = (
         _permission_range_markup(variant.permission_range_editor)
         if variant.permission_range_editor is not None
@@ -1537,7 +1564,8 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         "<w:body><w:p>"
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{vml_shape_hyperlink_markup}"
         f"{hyperlink_field_markup}{include_field_markup}"
-        f"{dde_field_markup}{document_variable_field_markup}{permission_range_markup}"
+        f"{dde_field_markup}{document_variable_field_markup}{form_data_field_markup}"
+        f"{permission_range_markup}"
         f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}"
         f"{markup_compatibility_markup}{binding_markup}"
         f"{ole_markup}{active_x_markup}{linked_ole_markup}{linked_picture_markup}"
@@ -1570,6 +1598,28 @@ def _simple_field(instruction: str, result: str) -> str:
     return (
         f'<w:fldSimple w:instr="{html.escape(instruction, quote=True)}">'
         f"{_run(result)}</w:fldSimple>"
+    )
+
+
+def _form_data_field_markup() -> str:
+    """Return a fixed legacy ``FORMTEXT`` field without evaluating it.
+
+    This is a stable carrier for the Settings boundary. Building it never
+    opens a document client, reads a form value, calculates a field, or saves
+    a form-data record.
+    """
+
+    return (
+        '<w:r><w:fldChar w:fldCharType="begin"><w:ffData>'
+        f'<w:name w:val="{_FORM_DATA_FIELD_NAME}"/><w:enabled/>'
+        '<w:calcOnExit w:val="false"/><w:textInput>'
+        f'<w:default w:val="{_FORM_DATA_FIELD_DEFAULT}"/>'
+        f'<w:maxLength w:val="{_FORM_DATA_FIELD_MAX_LENGTH}"/>'
+        "</w:textInput></w:ffData></w:fldChar></w:r>"
+        '<w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        f"{_run(_FORM_DATA_FIELD_RESULT)}"
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
     )
 
 
@@ -1774,6 +1824,11 @@ def _drawing_visibility_markup(hidden: bool) -> str:
 
 
 def _settings_xml(variant: DocumentVariant) -> bytes:
+    save_forms_data = (
+        _save_forms_data_markup(variant.save_forms_data)
+        if variant.save_forms_data is not None
+        else ""
+    )
     attached_custom_xml_schema = (
         _attached_custom_xml_schema_markup(variant.attached_custom_xml_schema_namespace)
         if variant.attached_custom_xml_schema_namespace is not None
@@ -1822,7 +1877,7 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
-        f"{attached_custom_xml_schema}{attached_template}"
+        f"{save_forms_data}{attached_custom_xml_schema}{attached_template}"
         f"{template_style_update_on_open}{personal_information_removal_on_save}"
         f"{mail_merge}{track_revisions}"
         f"{protection}{save_through_xslt}{field_recalculation_on_open}"
@@ -1907,6 +1962,18 @@ def _personal_information_removal_on_save_markup(enabled: bool) -> str:
 
     value = "true" if enabled else "false"
     return f'<w:removePersonalInformation w:val="{value}"/>'
+
+
+def _save_forms_data_markup(enabled: bool) -> str:
+    """Return a stored request for a later form-data-only save.
+
+    The fixture carries only the direct ``CT_OnOff`` configuration leaf. It
+    never evaluates legacy form fields, opens Word, saves a document, emits a
+    delimited record, or makes a host-behavior claim.
+    """
+
+    value = "true" if enabled else "false"
+    return f'<w:saveFormsData w:val="{value}"/>'
 
 
 def _attached_custom_xml_schema_markup(namespace: str) -> str:

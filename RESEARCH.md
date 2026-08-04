@@ -43,6 +43,26 @@ None of that implies absence of other relevant work. It identifies a concrete in
 - [`w:documentProtection`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.documentprotection?view=openxml-3.0.1) records editing restrictions but is documented as not being a security feature; DCAB therefore models only a password-free declaration and makes no security claim.
 - [Word OOXML documentation](https://learn.microsoft.com/en-us/office/dev/add-ins/word/create-better-add-ins-for-word-with-office-open-xml) describes OOXML as Word's native file format and demonstrates structured document tag markup.
 
+## Form-data-only save boundary
+
+Microsoft's Open XML SDK documents
+[`w:saveFormsData`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.saveformsdata?view=openxml-3.0.1)
+as a direct `CT_OnOff` child of Document Settings. Its contract describes
+form-field-content-only saving as a delimited text record, while Word's
+[`Document.SaveFormsData` documentation](https://learn.microsoft.com/en-us/office/vba/api/word.document.saveformsdata)
+uses a different delimiter description. That disagreement is precisely why
+DCAB treats the fixture as a stored-configuration boundary, not an emitted-file
+assertion.
+
+The new pair fixes a complete, legacy `FORMTEXT` field (begin/separate/end
+markers, `w:ffData`, name, enabled state, exit-calculation state, text input
+default, maximum length, and fixed result) in both packages. It changes only
+the direct `w:saveFormsData/@w:val` `false`/`true` declaration in
+`word/settings.xml`. It does not open Word, evaluate a field, inspect a form
+value, save a document, emit a delimited record, infer a delimiter, or assert
+client behavior. Released DocFence 0.37 maps the aggregate state transition
+without exposing the setting serialization or form-field material.
+
 ## Design implications
 
 1. The oracle must be deliberately partial and target-free. A benchmark should not force tools to disclose URL-like destinations, field arguments, data-binding XPath values, or opaque payload fingerprints.
