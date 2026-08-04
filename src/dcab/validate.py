@@ -1341,6 +1341,9 @@ def _validate_settings(
     save_forms_data_settings = [
         element for element in root if element.tag == _word_tag("saveFormsData")
     ]
+    save_preview_picture_settings = [
+        element for element in root if element.tag == _word_tag("savePreviewPicture")
+    ]
     attached_custom_xml_schemas = [
         element for element in root if element.tag == _word_tag("attachedSchema")
     ]
@@ -1380,6 +1383,8 @@ def _validate_settings(
         _invalid(spec, f"{side} personal-information-removal-on-save setting is invalid")
     if len(save_forms_data_settings) != int(variant.save_forms_data is not None):
         _invalid(spec, f"{side} save-forms-data setting is invalid")
+    if len(save_preview_picture_settings) != int(variant.save_preview_picture is not None):
+        _invalid(spec, f"{side} save-preview-picture setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if attached_custom_xml_schemas:
@@ -1432,6 +1437,16 @@ def _validate_settings(
             or (save_forms_data.tail or "").strip()
         ):
             _invalid(spec, f"{side} save-forms-data setting is invalid")
+    if save_preview_picture_settings:
+        save_preview_picture = save_preview_picture_settings[0]
+        expected_value = "true" if variant.save_preview_picture else "false"
+        if (
+            save_preview_picture.attrib != {_word_tag("val"): expected_value}
+            or list(save_preview_picture)
+            or (save_preview_picture.text or "").strip()
+            or (save_preview_picture.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} save-preview-picture setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():

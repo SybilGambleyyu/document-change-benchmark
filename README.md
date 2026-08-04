@@ -1,11 +1,13 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty-eight paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty-nine paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
 It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships and direct nonvisual visibility declarations, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, OOXML Markup Compatibility choice requirements, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
 It also includes form-data-only-save configuration, represented by a direct
-`w:saveFormsData` setting transition with a fixed legacy `FORMTEXT` carrier.
+`w:saveFormsData` setting transition with a fixed legacy `FORMTEXT` carrier,
+and preview-thumbnail-on-save configuration, represented by a direct
+`w:savePreviewPicture` setting transition with no thumbnail image part.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, instantiates an ActiveX control, or executes code.
 
@@ -40,7 +42,17 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the thirty-eight cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the thirty-nine cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+
+Version 0.28 adds a direct `w:savePreviewPicture` transition from explicitly
+disabled to enabled. Both packages retain no thumbnail relationship or image
+part, the same package topology, and the same stored Word text; only
+`word/settings.xml` changes. The pair records a future-save request only: it
+does not create, decode, render, or classify an image; open Word; save a
+document; generate a thumbnail; or claim client behavior. Fixture schema
+version 1 and the truth and observation envelopes are unchanged. An earlier
+observation can still be parsed, but it is incomplete when scored against this
+thirty-nine-case catalogue.
 
 Version 0.27 adds a direct `w:saveFormsData` transition from explicitly
 disabled to enabled. Both packages retain one fixed legacy `FORMTEXT` field,
@@ -106,6 +118,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 | `review.template_style_update_on_open_enabled` | `template_style_update_on_open_enabled` | review |
 | `review.personal_information_removal_on_save_enabled` | `personal_information_removal_on_save_enabled` | review |
 | `review.save_forms_data_enabled` | `save_forms_data_enabled` | review |
+| `review.save_preview_picture_enabled` | `save_preview_picture_enabled` | review |
 | `external.subdocument_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.frameset_source_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.vml_linked_ole_object_target_retargeted` | `vml_linked_ole_object_target_changed` | block |
@@ -132,7 +145,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro, embedded-OLE, and ActiveX persistence bytes are inert text markers, not valid executable, OLE, or control payloads. The package-thumbnail pair uses deterministic fully synthetic 1×1 PNG bytes; construction and validation treat them as opaque and never decode or render them. The public truth files deliberately exclude:
 
-- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, DrawingML nonvisual object names, descriptions, IDs, raw hidden serialization values, and graphic-data URIs, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles` and `w:removePersonalInformation` serialization values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, thumbnail relationship sources/targets, content types, and part paths, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, DrawingML nonvisual object names, descriptions, IDs, raw hidden serialization values, and graphic-data URIs, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles`, `w:removePersonalInformation`, and `w:savePreviewPicture` serialization values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, thumbnail relationship sources/targets, content types, and part paths, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, thumbnail image bytes, Markup Compatibility branch bodies,
   feature-prefix and qualified-name values, compatibility-rule values, opaque
   payload bytes, and payload fingerprints;
@@ -142,11 +155,17 @@ The form-data-only-save case also keeps legacy form-field name, default, and
 result values out of its public truth. Its sole public fact is the target-free
 stored setting transition.
 
+The preview-thumbnail-on-save case contains no thumbnail relationship or image
+part on either side. Its sole public fact is the target-free stored setting
+transition; it does not identify or make an image.
+
 The structural verifier compares generated bytes, validates ZIP/XML/package invariants, and refuses XML DTD/entity declarations. It does not interpret any stored value beyond the compact fixture contract.
 
 ## Why these surfaces
 
 The Open XML SDK's [`w:saveFormsData` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.saveformsdata?view=openxml-3.0.1) defines the direct Settings leaf as a request to save form-field content only. DCAB fixes a complete legacy `FORMTEXT` carrier (its field name, default, result, and marker sequence), all package members, and all stored Word text while changing only `w:saveFormsData/@w:val` from `false` to `true`. This is deliberately a configuration boundary, not an export test: DCAB does not read or evaluate a field, open Word, save a document, emit a delimited record, determine a delimiter, or claim client behavior. DocFence 0.37 maps the narrow transition through a privacy-safe aggregate inventory.
+
+The Open XML SDK's [`w:savePreviewPicture` documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.savepreviewpicture?view=openxml-3.0.1) defines the direct Settings leaf as a request for a supporting application to generate a first-page document thumbnail on save. DCAB fixes every package member, retains no thumbnail relationship or image part, and retains all stored Word text while changing only `w:savePreviewPicture/@w:val` from `false` to `true` in `word/settings.xml`. This is deliberately a stored-configuration boundary, not an image or preview test: DCAB does not create, decode, render, classify, or assert the presence of a thumbnail; it does not open Word, save a document, or claim client behavior. DocFence 0.38 maps the narrow transition through a privacy-safe aggregate inventory.
 
 Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its display text to a relationship target. [Microsoft's Open XML API documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.hyperlink?view=openxml-3.0.1) shows that relationship-backed form. Word content controls can bind to custom XML data, so mapping and embedded-data changes are meaningful stored review surfaces. [Microsoft documents those bindings](https://learn.microsoft.com/en-us/visualstudio/vsto/content-controls?view=visualstudio), including their relationship to custom XML parts. But a document can also store a custom XML part without a mapped content control; Microsoft's [Custom XML parts overview](https://learn.microsoft.com/en-us/visualstudio/vsto/custom-xml-parts-overview) says that Office applications can embed and modify those parts independently of a document view. DCAB therefore includes both a bound and an unbound custom-XML payload boundary, without treating either as evidence that a host will display or use the data.
 

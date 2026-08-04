@@ -17,6 +17,7 @@
 {"id": "review.template_style_update_on_open_enabled", "schema_version": 1, "truth": "review.template_style_update_on_open_enabled/truth.json"}
 {"id": "review.personal_information_removal_on_save_enabled", "schema_version": 1, "truth": "review.personal_information_removal_on_save_enabled/truth.json"}
 {"id": "review.save_forms_data_enabled", "schema_version": 1, "truth": "review.save_forms_data_enabled/truth.json"}
+{"id": "review.save_preview_picture_enabled", "schema_version": 1, "truth": "review.save_preview_picture_enabled/truth.json"}
 {"id": "external.subdocument_target_retargeted", "schema_version": 1, "truth": "external.subdocument_target_retargeted/truth.json"}
 {"id": "external.frameset_source_target_retargeted", "schema_version": 1, "truth": "external.frameset_source_target_retargeted/truth.json"}
 {"id": "external.vml_linked_ole_object_target_retargeted", "schema_version": 1, "truth": "external.vml_linked_ole_object_target_retargeted/truth.json"}

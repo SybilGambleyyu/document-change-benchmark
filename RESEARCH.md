@@ -63,6 +63,25 @@ value, save a document, emit a delimited record, infer a delimiter, or assert
 client behavior. Released DocFence 0.37 maps the aggregate state transition
 without exposing the setting serialization or form-field material.
 
+## Preview-thumbnail-on-save boundary
+
+Microsoft's Open XML SDK documents
+[`w:savePreviewPicture`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.savepreviewpicture?view=openxml-3.0.1)
+as a direct `CT_OnOff` child of Document Settings. Its contract specifies a
+request for a supporting application to generate a thumbnail for the first page
+when saving. It also says that omission leaves an application free to choose a
+thumbnail, which makes the direct declaration distinct from an already stored
+OPC thumbnail image.
+
+The new pair changes only the direct `w:savePreviewPicture/@w:val`
+`false`/`true` declaration in `word/settings.xml`. Both packages retain the
+same members and stored Word text and contain no thumbnail relationship, image
+part, or image bytes. The fixture neither opens Word nor saves a document;
+creates, decodes, renders, or classifies a thumbnail; or asserts that a host
+will generate or display one. Released DocFence 0.38 maps the aggregate state
+transition without exposing the setting serialization or inferring an existing
+thumbnail.
+
 ## Design implications
 
 1. The oracle must be deliberately partial and target-free. A benchmark should not force tools to disclose URL-like destinations, field arguments, data-binding XPath values, or opaque payload fingerprints.

@@ -302,6 +302,7 @@ class DocumentVariant:
     template_style_update_on_open: bool | None = None
     personal_information_removal_on_save: bool | None = None
     save_forms_data: bool | None = None
+    save_preview_picture: bool | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -685,6 +686,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="review",
         baseline=DocumentVariant(save_forms_data=False),
         candidate=DocumentVariant(save_forms_data=True),
+        changed_members=("word/settings.xml",),
+    ),
+    CaseSpec(
+        case_id="review.save_preview_picture_enabled",
+        title="Preview-thumbnail generation on save enabled",
+        description=(
+            "A direct Settings leaf changes from explicit disabled to enabled, storing a "
+            "request for a capable host to generate a first-page document thumbnail on a "
+            "later save. The pair contains no thumbnail part."
+        ),
+        fact={
+            "kind": "save_preview_picture_enabled",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(save_preview_picture=False),
+        candidate=DocumentVariant(save_preview_picture=True),
         changed_members=("word/settings.xml",),
     ),
     CaseSpec(
@@ -1188,6 +1206,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("personal-information-removal-on-save setting must be boolean")
     if variant.save_forms_data is not None and not isinstance(variant.save_forms_data, bool):
         raise FixtureBuildError("save-forms-data setting must be boolean")
+    if variant.save_preview_picture is not None and not isinstance(
+        variant.save_preview_picture, bool
+    ):
+        raise FixtureBuildError("save-preview-picture setting must be boolean")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1829,6 +1851,11 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         if variant.save_forms_data is not None
         else ""
     )
+    save_preview_picture = (
+        _save_preview_picture_markup(variant.save_preview_picture)
+        if variant.save_preview_picture is not None
+        else ""
+    )
     attached_custom_xml_schema = (
         _attached_custom_xml_schema_markup(variant.attached_custom_xml_schema_namespace)
         if variant.attached_custom_xml_schema_namespace is not None
@@ -1877,7 +1904,7 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
-        f"{save_forms_data}{attached_custom_xml_schema}{attached_template}"
+        f"{save_forms_data}{save_preview_picture}{attached_custom_xml_schema}{attached_template}"
         f"{template_style_update_on_open}{personal_information_removal_on_save}"
         f"{mail_merge}{track_revisions}"
         f"{protection}{save_through_xslt}{field_recalculation_on_open}"
@@ -1974,6 +2001,18 @@ def _save_forms_data_markup(enabled: bool) -> str:
 
     value = "true" if enabled else "false"
     return f'<w:saveFormsData w:val="{value}"/>'
+
+
+def _save_preview_picture_markup(enabled: bool) -> str:
+    """Return a stored request to generate a thumbnail on a later save.
+
+    The fixture carries only the direct ``CT_OnOff`` configuration leaf. It
+    never creates, decodes, renders, or classifies an image; opens Word; saves
+    a document; or makes a host-behavior claim.
+    """
+
+    value = "true" if enabled else "false"
+    return f'<w:savePreviewPicture w:val="{value}"/>'
 
 
 def _attached_custom_xml_schema_markup(namespace: str) -> str:
