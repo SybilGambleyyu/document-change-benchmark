@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 32,
-        "fact_count": 32,
+        "case_count": 33,
+        "fact_count": 33,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 32, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 33, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 62
-    assert loaded_package_count == 64
+    assert loaded_document_count == 64
+    assert loaded_package_count == 66
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -262,6 +262,39 @@ def test_template_style_update_on_open_pair_has_a_stable_template_and_one_boolea
     assert candidate_root[1].attrib == {value_attribute: "true"}
     assert not list(baseline_root[1])
     assert not list(candidate_root[1])
+    assert [
+        node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
+    ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]
+
+
+def test_personal_information_removal_on_save_pair_has_one_boolean_boundary() -> None:
+    """Only a direct Settings ``CT_OnOff`` request changes from false to true."""
+
+    case = FIXTURES / "review.personal_information_removal_on_save_enabled"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/settings.xml"
+        ]
+        assert "word/_rels/settings.xml.rels" not in members
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_root = ET.fromstring(baseline.read("word/settings.xml"))
+        candidate_root = ET.fromstring(candidate.read("word/settings.xml"))
+
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    setting_tag = f"{{{word_namespace}}}removePersonalInformation"
+    value_attribute = f"{{{word_namespace}}}val"
+    assert [child.tag for child in baseline_root] == [setting_tag]
+    assert [child.tag for child in candidate_root] == [setting_tag]
+    assert baseline_root[0].attrib == {value_attribute: "false"}
+    assert candidate_root[0].attrib == {value_attribute: "true"}
+    assert not list(baseline_root[0])
+    assert not list(candidate_root[0])
     assert [
         node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
     ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]

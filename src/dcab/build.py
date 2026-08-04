@@ -232,6 +232,7 @@ class DocumentVariant:
     attached_custom_xml_schema_namespace: str | None = None
     field_recalculation_on_open: bool | None = None
     template_style_update_on_open: bool | None = None
+    personal_information_removal_on_save: bool | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -578,6 +579,23 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
             attached_template_target=_ATTACHED_TEMPLATE_APPROVED,
             template_style_update_on_open=True,
         ),
+        changed_members=("word/settings.xml",),
+    ),
+    CaseSpec(
+        case_id="review.personal_information_removal_on_save_enabled",
+        title="Personal-information removal on save enabled",
+        description=(
+            "A direct Settings leaf changes from explicit disabled to enabled, storing a "
+            "request for a capable host to remove document-author personal information on "
+            "a later save."
+        ),
+        fact={
+            "kind": "personal_information_removal_on_save_enabled",
+            "source": "word_settings",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(personal_information_removal_on_save=False),
+        candidate=DocumentVariant(personal_information_removal_on_save=True),
         changed_members=("word/settings.xml",),
     ),
     CaseSpec(
@@ -1021,6 +1039,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         variant.template_style_update_on_open, bool
     ):
         raise FixtureBuildError("template-style-update-on-open setting must be boolean")
+    if variant.personal_information_removal_on_save is not None and not isinstance(
+        variant.personal_information_removal_on_save, bool
+    ):
+        raise FixtureBuildError("personal-information-removal-on-save setting must be boolean")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1583,6 +1605,11 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         if variant.template_style_update_on_open is not None
         else ""
     )
+    personal_information_removal_on_save = (
+        _personal_information_removal_on_save_markup(variant.personal_information_removal_on_save)
+        if variant.personal_information_removal_on_save is not None
+        else ""
+    )
     document_variables = (
         _document_variables_markup(variant.document_variable_value)
         if variant.document_variable_value is not None
@@ -1601,7 +1628,8 @@ def _settings_xml(variant: DocumentVariant) -> bytes:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<w:settings xmlns:w="{_WORD_NS}"{relationship_namespace}>'
         f"{attached_custom_xml_schema}{attached_template}"
-        f"{template_style_update_on_open}{mail_merge}{track_revisions}"
+        f"{template_style_update_on_open}{personal_information_removal_on_save}"
+        f"{mail_merge}{track_revisions}"
         f"{protection}{save_through_xslt}{field_recalculation_on_open}"
         f"{document_variables}"
         "</w:settings>"
@@ -1671,6 +1699,19 @@ def _template_style_update_on_open_markup(enabled: bool) -> str:
 
     value = "true" if enabled else "false"
     return f'<w:linkStyles w:val="{value}"/>'
+
+
+def _personal_information_removal_on_save_markup(enabled: bool) -> str:
+    """Return a direct request to remove personal information on a later save.
+
+    The fixture carries only a stored ``CT_OnOff`` request. Building it neither
+    identifies authors nor reads, rewrites, or removes document properties,
+    comments, revisions, or other package material; it never saves a document
+    or makes a host-behavior claim.
+    """
+
+    value = "true" if enabled else "false"
+    return f'<w:removePersonalInformation w:val="{value}"/>'
 
 
 def _attached_custom_xml_schema_markup(namespace: str) -> str:

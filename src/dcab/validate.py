@@ -1128,6 +1128,9 @@ def _validate_settings(
     template_style_updates_on_open = [
         element for element in root if element.tag == _word_tag("linkStyles")
     ]
+    personal_information_removals_on_save = [
+        element for element in root if element.tag == _word_tag("removePersonalInformation")
+    ]
     attached_custom_xml_schemas = [
         element for element in root if element.tag == _word_tag("attachedSchema")
     ]
@@ -1161,6 +1164,10 @@ def _validate_settings(
         variant.template_style_update_on_open is not None
     ):
         _invalid(spec, f"{side} template-style-update-on-open setting is invalid")
+    if len(personal_information_removals_on_save) != int(
+        variant.personal_information_removal_on_save is not None
+    ):
+        _invalid(spec, f"{side} personal-information-removal-on-save setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if attached_custom_xml_schemas:
@@ -1193,6 +1200,16 @@ def _validate_settings(
             or (template_style_update.tail or "").strip()
         ):
             _invalid(spec, f"{side} template-style-update-on-open setting is invalid")
+    if personal_information_removals_on_save:
+        personal_information_removal = personal_information_removals_on_save[0]
+        expected_value = "true" if variant.personal_information_removal_on_save else "false"
+        if (
+            personal_information_removal.attrib != {_word_tag("val"): expected_value}
+            or list(personal_information_removal)
+            or (personal_information_removal.text or "").strip()
+            or (personal_information_removal.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} personal-information-removal-on-save setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():
