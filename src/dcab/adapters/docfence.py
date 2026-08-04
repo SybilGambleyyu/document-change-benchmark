@@ -569,6 +569,74 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("content_control_lock_inventory_changed")
+    if kind == "package_signature_coverage_changed":
+        observed = _has_changes(report, "package_signature_coverage_changed") and all(
+            (
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "signature_with_declared_package_coverage_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "signature_without_declared_package_coverage_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_covered_word_part_count",
+                    3,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_uncovered_word_part_count",
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "package_signature_coverage",
+                    "declared_covered_word_relationship_count",
+                    2,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "package_signature_coverage",
+                    "declared_uncovered_word_relationship_count",
+                    0,
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_covered_root_document_relationship_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_uncovered_root_document_relationship_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "unresolved_package_manifest_reference_count",
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "unsupported_package_manifest_reference_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("package_signature_coverage_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

@@ -80,7 +80,17 @@ from .build import (
     _OFFICE_VML_NS,
     _OLE_CONTENT_TYPE,
     _OLE_OBJECT_RELATIONSHIP,
+    _OPC_DIGITAL_SIGNATURE_NS,
+    _OPC_RELATIONSHIP_TRANSFORM_ALGORITHM,
+    _PACKAGE_DIGITAL_SIGNATURE_ORIGIN_CONTENT_TYPE,
+    _PACKAGE_DIGITAL_SIGNATURE_ORIGIN_RELATIONSHIP,
+    _PACKAGE_DIGITAL_SIGNATURE_RELATIONSHIP,
+    _PACKAGE_DIGITAL_SIGNATURE_XML_CONTENT_TYPE,
     _PACKAGE_REL_NS,
+    _PACKAGE_RELATIONSHIP_CONTENT_TYPE,
+    _PACKAGE_SIGNATURE_COVERAGE_STATES,
+    _PACKAGE_SIGNATURE_ID,
+    _PACKAGE_SIGNATURE_OBJECT_ID,
     _PACKAGE_THUMBNAIL_CONTENT_TYPE,
     _PACKAGE_THUMBNAIL_RELATIONSHIP,
     _PERMISSION_RANGE_MARKER_ID,
@@ -117,6 +127,8 @@ from .build import (
     _WORD_2012_WORDML_NS,
     _WORD_NS,
     _WORDPROCESSING_DRAWING_NS,
+    _XML_C14N_ALGORITHM,
+    _XMLDSIG_NS,
     CASE_IDS,
     CASE_SPECS,
     FIXTURE_SCHEMA_VERSION,
@@ -249,6 +261,12 @@ def _validate_package(
         }
     if variant.frameset_source_target is not None:
         expected_members |= {"word/webSettings.xml", "word/_rels/webSettings.xml.rels"}
+    if variant.package_signature_coverage_state is not None:
+        expected_members |= {
+            "_xmlsignatures/origin.sigs",
+            "_xmlsignatures/_rels/origin.sigs.rels",
+            "_xmlsignatures/sig1.xml",
+        }
     if (
         variant.attached_template_target is not None
         or variant.mail_merge_data_source_target is not None
@@ -261,6 +279,7 @@ def _validate_package(
 
     _validate_content_types(members, variant, spec, side)
     _validate_root_relationships(members, variant, spec, side)
+    _validate_package_signature(members, variant, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
     _validate_active_x_control(members, variant, spec, side)
@@ -360,6 +379,13 @@ def _validate_content_types(
                 "/word/webextensions/webextension1.xml": _TASKPANE_WEB_EXTENSION_CONTENT_TYPE,
             }
         )
+    if variant.package_signature_coverage_state is not None:
+        expected.update(
+            {
+                "/_xmlsignatures/origin.sigs": _PACKAGE_DIGITAL_SIGNATURE_ORIGIN_CONTENT_TYPE,
+                "/_xmlsignatures/sig1.xml": _PACKAGE_DIGITAL_SIGNATURE_XML_CONTENT_TYPE,
+            }
+        )
     if overrides != expected:
         _invalid(spec, f"{side} content type overrides are invalid")
     if defaults != {
@@ -388,6 +414,14 @@ def _validate_root_relationships(
                 "Type": _PACKAGE_THUMBNAIL_RELATIONSHIP,
             }
         )
+    if variant.package_signature_coverage_state is not None:
+        expected.append(
+            {
+                "Id": "rIdSignatureOrigin",
+                "Target": "_xmlsignatures/origin.sigs",
+                "Type": _PACKAGE_DIGITAL_SIGNATURE_ORIGIN_RELATIONSHIP,
+            }
+        )
     if root.tag != f"{{{_PACKAGE_REL_NS}}}Relationships" or len(root) != len(expected):
         _invalid(spec, f"{side} package office-document relationship is invalid")
     for relationship, expected_attributes in zip(root, expected, strict=True):
@@ -396,6 +430,164 @@ def _validate_root_relationships(
             or relationship.attrib != expected_attributes
         ):
             _invalid(spec, f"{side} package relationship is invalid")
+
+
+def _validate_package_signature(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate DCAB's static declaration carrier without verifying XMLDSIG."""
+
+    state = variant.package_signature_coverage_state
+    if state is None:
+        return
+    if state not in _PACKAGE_SIGNATURE_COVERAGE_STATES:
+        _invalid(spec, f"{side} package-signature coverage state is invalid")
+    if members["_xmlsignatures/origin.sigs"] != b"":
+        _invalid(spec, f"{side} package-signature origin is invalid")
+    if _relationship_map(members["_xmlsignatures/_rels/origin.sigs.rels"], spec) != {
+        "rIdSignature": (_PACKAGE_DIGITAL_SIGNATURE_RELATIONSHIP, "sig1.xml", "internal")
+    }:
+        _invalid(spec, f"{side} package-signature relationship is invalid")
+
+    root = _parse_xml(members["_xmlsignatures/sig1.xml"], spec)
+    if root.tag != _dsig_tag("Signature") or root.attrib != {"Id": _PACKAGE_SIGNATURE_ID}:
+        _invalid(spec, f"{side} package signature root is invalid")
+    if [child.tag for child in root] != [
+        _dsig_tag("SignedInfo"),
+        _dsig_tag("SignatureValue"),
+        _dsig_tag("Object"),
+    ]:
+        _invalid(spec, f"{side} package signature shape is invalid")
+    signed_info, signature_value, package_object = root
+    if signature_value.text != "DCAB_NONCRYPTOGRAPHIC_SIGNATURE_VALUE":
+        _invalid(spec, f"{side} package signature value is invalid")
+    if [child.tag for child in signed_info] != [
+        _dsig_tag("CanonicalizationMethod"),
+        _dsig_tag("SignatureMethod"),
+        _dsig_tag("Reference"),
+    ]:
+        _invalid(spec, f"{side} package SignedInfo is invalid")
+    canonicalization, signature_method, object_reference = signed_info
+    if (
+        canonicalization.attrib != {"Algorithm": _XML_C14N_ALGORITHM}
+        or signature_method.attrib
+        != {"Algorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"}
+        or object_reference.attrib
+        != {
+            "Type": f"{_XMLDSIG_NS}Object",
+            "URI": f"#{_PACKAGE_SIGNATURE_OBJECT_ID}",
+        }
+    ):
+        _invalid(spec, f"{side} package SignedInfo references are invalid")
+    _validate_package_signature_digest(object_reference, spec, side)
+
+    if package_object.attrib != {"Id": _PACKAGE_SIGNATURE_OBJECT_ID} or [
+        child.tag for child in package_object
+    ] != [_dsig_tag("Manifest"), _dsig_tag("SignatureProperties")]:
+        _invalid(spec, f"{side} package signature object is invalid")
+    manifest, signature_properties = package_object
+    expected_word_relationship_ids = ("rIdStyles",)
+    if state == "complete":
+        expected_word_relationship_ids += ("rIdSettings",)
+    expected_references = (
+        (
+            f"/_rels/.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
+            ("rIdOfficeDocument",),
+        ),
+        (
+            f"/word/_rels/document.xml.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
+            expected_word_relationship_ids,
+        ),
+        (f"/word/document.xml?ContentType={_DOCX_MAIN_CONTENT_TYPE}", None),
+        (f"/word/settings.xml?ContentType={_SETTINGS_CONTENT_TYPE}", None),
+        (f"/word/styles.xml?ContentType={_STYLES_CONTENT_TYPE}", None),
+    )
+    if len(manifest) != len(expected_references):
+        _invalid(spec, f"{side} package manifest reference count is invalid")
+    for reference, (uri, relationship_ids) in zip(manifest, expected_references, strict=True):
+        _validate_package_manifest_reference(reference, uri, relationship_ids, spec, side)
+    _validate_package_signature_properties(signature_properties, spec, side)
+
+
+def _validate_package_manifest_reference(
+    reference: ET.Element,
+    uri: str,
+    relationship_ids: tuple[str, ...] | None,
+    spec: CaseSpec,
+    side: str,
+) -> None:
+    if reference.tag != _dsig_tag("Reference") or reference.attrib != {"URI": uri}:
+        _invalid(spec, f"{side} package manifest reference is invalid")
+    children = list(reference)
+    if relationship_ids is None:
+        if [child.tag for child in children] != [
+            _dsig_tag("DigestMethod"),
+            _dsig_tag("DigestValue"),
+        ]:
+            _invalid(spec, f"{side} package manifest part reference is invalid")
+        _validate_package_signature_digest(reference, spec, side)
+        return
+
+    if [child.tag for child in children] != [
+        _dsig_tag("Transforms"),
+        _dsig_tag("DigestMethod"),
+        _dsig_tag("DigestValue"),
+    ]:
+        _invalid(spec, f"{side} package manifest relationship reference is invalid")
+    transforms = children[0]
+    if [child.tag for child in transforms] != [_dsig_tag("Transform"), _dsig_tag("Transform")]:
+        _invalid(spec, f"{side} package manifest transforms are invalid")
+    relationship_transform, canonicalization = transforms
+    if (
+        relationship_transform.attrib != {"Algorithm": _OPC_RELATIONSHIP_TRANSFORM_ALGORITHM}
+        or canonicalization.attrib != {"Algorithm": _XML_C14N_ALGORITHM}
+        or [child.tag for child in relationship_transform]
+        != [_opc_signature_tag("RelationshipReference")] * len(relationship_ids)
+        or [child.attrib for child in relationship_transform]
+        != [{"SourceId": relationship_id} for relationship_id in relationship_ids]
+    ):
+        _invalid(spec, f"{side} package manifest relationship selection is invalid")
+    _validate_package_signature_digest(reference, spec, side)
+
+
+def _validate_package_signature_digest(reference: ET.Element, spec: CaseSpec, side: str) -> None:
+    digest_method = next(
+        (child for child in reference if child.tag == _dsig_tag("DigestMethod")), None
+    )
+    digest_value = next(
+        (child for child in reference if child.tag == _dsig_tag("DigestValue")), None
+    )
+    if (
+        digest_method is None
+        or digest_value is None
+        or digest_method.attrib != {"Algorithm": "http://www.w3.org/2001/04/xmlenc#sha256"}
+        or digest_value.text != "DCAB_NONCRYPTOGRAPHIC_DIGEST_VALUE"
+    ):
+        _invalid(spec, f"{side} package signature digest placeholder is invalid")
+
+
+def _validate_package_signature_properties(
+    properties: ET.Element, spec: CaseSpec, side: str
+) -> None:
+    if properties.tag != _dsig_tag("SignatureProperties") or len(properties) != 1:
+        _invalid(spec, f"{side} package signature properties are invalid")
+    property_element = properties[0]
+    if (
+        property_element.tag != _dsig_tag("SignatureProperty")
+        or property_element.attrib
+        != {"Id": "idSignatureTime", "Target": f"#{_PACKAGE_SIGNATURE_ID}"}
+        or len(property_element) != 1
+    ):
+        _invalid(spec, f"{side} package signature property is invalid")
+    signature_time = property_element[0]
+    if (
+        signature_time.tag != _opc_signature_tag("SignatureTime")
+        or [child.tag for child in signature_time]
+        != [_opc_signature_tag("Format"), _opc_signature_tag("Value")]
+        or signature_time[0].text != "YYYY-MM-DDThh:mm:ssTZD"
+        or signature_time[1].text != "1980-01-01T00:00:00Z"
+    ):
+        _invalid(spec, f"{side} package signature time is invalid")
 
 
 def _validate_document_relationships(
@@ -1938,6 +2130,14 @@ def _run_has_vanish(run: ET.Element) -> bool:
 
 def _word_tag(local_name: str) -> str:
     return f"{{{_WORD_NS}}}{local_name}"
+
+
+def _dsig_tag(local_name: str) -> str:
+    return f"{{{_XMLDSIG_NS}}}{local_name}"
+
+
+def _opc_signature_tag(local_name: str) -> str:
+    return f"{{{_OPC_DIGITAL_SIGNATURE_NS}}}{local_name}"
 
 
 def _drawing_tag(local_name: str) -> str:

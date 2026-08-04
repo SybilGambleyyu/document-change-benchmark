@@ -1,15 +1,16 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies forty paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies forty-one paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
-It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships and direct nonvisual visibility declarations, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, OOXML Markup Compatibility choice requirements, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
+It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships and direct nonvisual visibility declarations, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, static OPC package-signature declaration coverage, OOXML Markup Compatibility choice requirements, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
 It also includes form-data-only-save configuration, represented by a direct
 `w:saveFormsData` setting transition with a fixed legacy `FORMTEXT` carrier,
 and preview-thumbnail-on-save configuration, represented by a direct
 `w:savePreviewPicture` setting transition with no thumbnail image part, plus a
 direct content-control `w:sdtPr/w:lock` state transition with a fixed SDT
-carrier.
+carrier, and a static package-signature manifest-coverage transition with fixed
+Word content and package membership.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, instantiates an ActiveX control, or executes code.
 
@@ -44,7 +45,19 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the forty cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the forty-one cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+
+Version 0.30 adds a static OPC package-signature declaration-coverage boundary.
+Both packages retain the same signature-origin topology, package members, and
+stored Word text. One synthetic, XMLDSIG-shaped signature manifest changes only
+one relationship-selection declaration, reducing the declared coverage of an
+otherwise fixed Word relationships part. The package-signature material is
+intentionally non-cryptographic placeholder data: the case does not validate a
+signature, recompute a digest, inspect a certificate, establish trust or
+integrity, or assert any client behavior. Fixture schema version 1 and the
+truth and observation envelopes are unchanged. An earlier observation can
+still be parsed, but it is incomplete when scored against this forty-one-case
+catalogue.
 
 Version 0.29 adds a direct content-control `w:sdtPr/w:lock` transition from
 explicit `unlocked` to `sdtContentLocked`. Both packages retain the same
@@ -54,7 +67,7 @@ declaration only: it does not infer a lock from an omitted leaf, determine a
 control type or effective editing behavior, open Word, read a control value,
 apply a lock, or claim client enforcement. Fixture schema version 1 and the
 truth and observation envelopes are unchanged. An earlier observation can
-still be parsed, but it is incomplete when scored against this forty-case
+still be parsed, but it is incomplete when scored against the preceding forty-case
 catalogue.
 
 Version 0.28 adds a direct `w:savePreviewPicture` transition from explicitly
@@ -133,6 +146,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 | `review.save_forms_data_enabled` | `save_forms_data_enabled` | review |
 | `review.save_preview_picture_enabled` | `save_preview_picture_enabled` | review |
 | `review.content_control_lock_state_changed` | `content_control_lock_state_changed` | review |
+| `review.package_signature_declared_coverage_changed` | `package_signature_coverage_changed` | review |
 | `external.subdocument_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.frameset_source_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.vml_linked_ole_object_target_retargeted` | `vml_linked_ole_object_target_changed` | block |
@@ -159,7 +173,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 
 All URI-like relationship values use the reserved `example.invalid` domain, and the DDE source is a synthetic local-style string. Macro, embedded-OLE, and ActiveX persistence bytes are inert text markers, not valid executable, OLE, or control payloads. The package-thumbnail pair uses deterministic fully synthetic 1×1 PNG bytes; construction and validation treat them as opaque and never decode or render them. The public truth files deliberately exclude:
 
-- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, DrawingML nonvisual object names, descriptions, IDs, raw hidden serialization values, and graphic-data URIs, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles`, `w:removePersonalInformation`, and `w:savePreviewPicture` serialization values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, thumbnail relationship sources/targets, content types, and part paths, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
+- targets, field instructions and fragmented field-code runs, VML shape IDs and target frames, linked-OLE ProgIDs, object IDs, and update modes, DrawingML nonvisual object names, descriptions, IDs, raw hidden serialization values, and graphic-data URIs, ActiveX control names, class IDs, persistence metadata, document-variable names and values, mail-merge recipient hashes and inclusion values, save-through-XSLT anchor and local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles`, `w:removePersonalInformation`, and `w:savePreviewPicture` serialization values, permission marker IDs and individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment authors, initials, dates and body text, raw `commentsExtended` serialization values, frameset layout/name/size values, package-signature values, manifest object IDs, reference URIs, relationship selectors, signature/origin paths, thumbnail relationship sources/targets, content types, and part paths, references, store descriptors, property values, XPath expressions, relationship IDs, and relationship paths;
 - custom XML values, thumbnail image bytes, Markup Compatibility branch bodies,
   feature-prefix and qualified-name values, compatibility-rule values, opaque
   payload bytes, and payload fingerprints;
@@ -173,6 +187,11 @@ The preview-thumbnail-on-save case contains no thumbnail relationship or image
 part on either side. Its sole public fact is the target-free stored setting
 transition; it does not identify or make an image.
 
+The package-signature case exposes only a target-free static coverage fact. Its
+XMLDSIG-shaped values are fixed synthetic placeholders, so it does not establish
+cryptographic validity, signer identity, trust, digest integrity, or any
+client-side signature result.
+
 The structural verifier compares generated bytes, validates ZIP/XML/package invariants, and refuses XML DTD/entity declarations. It does not interpret any stored value beyond the compact fixture contract.
 
 ## Why these surfaces
@@ -184,6 +203,8 @@ The Open XML SDK's [`w:savePreviewPicture` documentation](https://learn.microsof
 Word uses native OOXML packages, and direct `w:hyperlink` markup can bind its display text to a relationship target. [Microsoft's Open XML API documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.hyperlink?view=openxml-3.0.1) shows that relationship-backed form. Word content controls can bind to custom XML data, so mapping and embedded-data changes are meaningful stored review surfaces. [Microsoft documents those bindings](https://learn.microsoft.com/en-us/visualstudio/vsto/content-controls?view=visualstudio), including their relationship to custom XML parts. But a document can also store a custom XML part without a mapped content control; Microsoft's [Custom XML parts overview](https://learn.microsoft.com/en-us/visualstudio/vsto/custom-xml-parts-overview) says that Office applications can embed and modify those parts independently of a document view. DCAB therefore includes both a bound and an unbound custom-XML payload boundary, without treating either as evidence that a host will display or use the data.
 
 The OOXML [Thumbnail Part contract](https://ooxml.info/docs/15/15.2/15.2.16/) defines an image part reached through a package or part thumbnail relationship, with an internal target and no relationships of its own. The Open XML SDK exposes that surface through [`AddThumbnailPart`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.packaging.wordprocessingdocument.addthumbnailpart?view=openxml-2.20.0). DCAB fixes one standard root thumbnail relationship and `image/png` content type while changing only a fully synthetic 1×1 PNG's opaque bytes. It does not decode, classify, or render an image, or claim it previews the current document or will be shown by a client. Released DocFence 0.34 maps the same payload boundary through an aggregate-only thumbnail inventory.
+
+The OPC [digital-signature contract](https://c-rex.net/samples/ooxml/e1/Part2/OOXML_P2_Open_Packaging_Conventions_Digital_topic_ID0EHROM.html) defines a root-related Digital Signature Origin part, signature parts related from that origin, a package-specific `Object` containing a `Manifest`, and a relationships transform for signing a subset of relationships. DCAB fixes that standards-shaped static topology, the signature-part membership, all non-signature package bytes, and stored Word text while changing only one private relationship-selection declaration in the manifest. The pair is intentionally not a cryptographic signature: it does not calculate or validate a digest or signature, inspect certificates, establish trust, or claim integrity or client behavior. Released DocFence 0.40 maps the declared static coverage transition through aggregate counts.
 
 Microsoft's [introduction to markup compatibility](https://learn.microsoft.com/en-us/office/open-xml/general/introduction-to-markup-compatibility) describes `AlternateContent` as markup alternatives selected by a consumer at runtime according to its processing settings and supported features. DCAB fixes one MCE `Choice`/`Fallback` shape and every branch text value while changing only the one required-feature prefix. It does not resolve that prefix, select a branch, target an Office version, preprocess or save the package, or make a client-rendering claim. DocFence 0.35 maps the same-count private requirement rewrite through an aggregate-only MCE inventory without exposing branch material or the prefix value.
 

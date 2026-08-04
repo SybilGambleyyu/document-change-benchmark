@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 40,
-        "fact_count": 40,
+        "case_count": 41,
+        "fact_count": 41,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 40, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 41, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 78
-    assert loaded_package_count == 80
+    assert loaded_document_count == 80
+    assert loaded_package_count == 82
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -678,6 +678,62 @@ def test_content_control_lock_pair_has_a_fixed_carrier_and_one_state_boundary() 
     ]
     assert [node.text for node in baseline_root.iter(tag("t"))] == [
         node.text for node in candidate_root.iter(tag("t"))
+    ]
+
+
+def test_package_signature_coverage_pair_has_one_manifest_selection_boundary() -> None:
+    """A fixed XMLDSIG-shaped package changes only one static relationship selection."""
+
+    case = FIXTURES / "review.package_signature_declared_coverage_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "_xmlsignatures/sig1.xml"
+        ]
+        assert baseline.read("_rels/.rels") == candidate.read("_rels/.rels")
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+        baseline_signature = ET.fromstring(baseline.read("_xmlsignatures/sig1.xml"))
+        candidate_signature = ET.fromstring(candidate.read("_xmlsignatures/sig1.xml"))
+
+    xml_dsig_namespace = "http://www.w3.org/2000/09/xmldsig#"
+    opc_signature_namespace = "http://schemas.openxmlformats.org/package/2006/digital-signature"
+    relationship_transform = "http://schemas.openxmlformats.org/package/2006/RelationshipTransform"
+
+    def selected_word_relationship_ids(signature: ET.Element) -> list[str]:
+        manifest = signature.find(
+            f"{{{xml_dsig_namespace}}}Object/{{{xml_dsig_namespace}}}Manifest"
+        )
+        assert manifest is not None
+        reference = next(
+            child
+            for child in manifest
+            if child.get("URI", "").startswith("/word/_rels/document.xml.rels?")
+        )
+        transform = reference.find(
+            f"{{{xml_dsig_namespace}}}Transforms/"
+            f"{{{xml_dsig_namespace}}}Transform[@Algorithm='{relationship_transform}']"
+        )
+        assert transform is not None
+        return [
+            child.attrib["SourceId"]
+            for child in transform
+            if child.tag == f"{{{opc_signature_namespace}}}RelationshipReference"
+        ]
+
+    assert selected_word_relationship_ids(baseline_signature) == ["rIdStyles", "rIdSettings"]
+    assert selected_word_relationship_ids(candidate_signature) == ["rIdStyles"]
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    baseline_document = Document(case / "baseline.docx")
+    candidate_document = Document(case / "candidate.docx")
+    assert [node.text for node in baseline_document.element.iter(f"{{{word_namespace}}}t")] == [
+        node.text for node in candidate_document.element.iter(f"{{{word_namespace}}}t")
     ]
 
 

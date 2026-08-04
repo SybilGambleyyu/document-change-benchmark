@@ -37,6 +37,7 @@ None of that implies absence of other relevant work. It identifies a concrete in
 - [Word content controls](https://learn.microsoft.com/en-us/visualstudio/vsto/content-controls?view=visualstudio) can bind content controls to embedded custom XML parts. [Microsoft's binding walkthrough](https://learn.microsoft.com/en-us/visualstudio/vsto/walkthrough-binding-content-controls-to-custom-xml-parts?view=visualstudio) explains that mapped values can display when a document opens.
 - Microsoft's [Custom XML parts overview](https://learn.microsoft.com/en-us/visualstudio/vsto/custom-xml-parts-overview) describes embedded custom XML parts as package data that Office solutions can create or modify while a document is open or closed. A control binding is therefore not a precondition for a stored custom-XML review surface. DCAB's unbound pair fixes the ordinary custom-XML data/properties topology, relationship, and all Word text while changing only inert synthetic XML bytes. It neither parses the payload as application data nor asserts that Word displays, uses, or removes it. Released DocFence 0.33 records the same aggregate payload change and offers an opt-in candidate gate for a clean handoff.
 - The OOXML [Thumbnail Part contract](https://ooxml.info/docs/15/15.2/15.2.16/) defines a thumbnail image as an internally related package or part target, with at most one thumbnail relationship per source and no relationships from the thumbnail image itself. The Open XML SDK exposes a `WordprocessingDocument` [`AddThumbnailPart`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.packaging.wordprocessingdocument.addthumbnailpart?view=openxml-2.20.0) method. DCAB fixes one root-package relationship and `image/png` content type while changing only deterministic 1×1 synthetic PNG bytes. It neither decodes nor renders the image, and it does not claim that its pixels reflect the document or will be displayed by a client. Released DocFence 0.34 reports the same-count payload transition through an aggregate-only thumbnail inventory.
+- The OPC [digital-signature conformance rules](https://c-rex.net/samples/ooxml/e1/Part2/OOXML_P2_Open_Packaging_Conventions_Digital_topic_ID0EHROM.html) define a Digital Signature Origin part reached from the package root, XML Signature parts related from that origin, one package-specific `Object` with a `Manifest`, and a relationships transform for signing a subset of relationships. DCAB fixes that static topology, the signature membership, all non-signature package bytes, and stored Word text while omitting one private relationship-selection declaration from the candidate's manifest. The generated XMLDSIG-shaped values are intentionally non-cryptographic placeholders: neither case is presented as a valid signature, and construction, validation, and scoring do not calculate digests, validate signatures, inspect certificates, establish trust, or assert a client result. Released DocFence 0.40 maps the aggregate declared-coverage transition without exposing signature values, reference URIs, or relationship selectors.
 - Microsoft's [introduction to markup compatibility](https://learn.microsoft.com/en-us/office/open-xml/general/introduction-to-markup-compatibility) explains that `AlternateContent` holds alternatives selected at runtime according to a consumer's processing settings and supported features, and that preprocessing may select and remove branches before a document is saved. DCAB fixes one standard MCE namespace declaration, a `Choice`/`Fallback` shape, all branch text, and the package topology while changing only `Choice/@Requires` between two declared feature prefixes. It does not validate MCE conformance, resolve a prefix, select a branch, target an Office version, preprocess or save a package, or make a client-behavior claim. DocFence 0.35 reports the same-count private requirement rewrite through an aggregate-only MCE inventory without exposing branch content or prefix values.
 - The Open XML SDK documents [`NonVisualDrawingProperties.Hidden`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.nonvisualdrawingproperties.hidden?view=openxml-3.0.1) as a stored state for an object that can remain present but hidden, with omission shown by default. DCAB fixes one compact inline DrawingML carrier, its package topology, and all stored Word text while changing only the direct `wp:docPr/@hidden` XML Boolean from `false` to `true`. It does not identify a visual object, calculate effective visibility, choose an MCE branch, lay out or render DrawingML, or claim client behavior. DocFence 0.36 reports the aggregate-only static transition without exposing object metadata or the raw stored value.
 - [`w:vanish`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.vanish?view=openxml-3.0.1) and [`w:ins`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.insertedrun?view=openxml-3.0.1) are explicit WordprocessingML markup classes.
@@ -103,6 +104,27 @@ It does not open Word, inspect a user/control value, change a control, apply
 document protection, identify a user, or assert that a client honors the
 stored declaration. Released DocFence 0.39 detects the aggregate static change
 while keeping control identity and contents private.
+
+## Static declared package-signature coverage boundary
+
+The OPC [digital-signature model](https://c-rex.net/samples/ooxml/e1/Part2/OOXML_P2_Open_Packaging_Conventions_Digital_topic_ID0EHROM.html)
+requires a Digital Signature Origin part related from the package root and
+Digital Signature XML Signature parts related from that origin. Its
+package-specific signature `Object` contains a `Manifest`; when a signature
+covers a subset of a relationships part, the model uses a relationships
+transform followed by canonicalization. This supplies a meaningful static
+review surface independent of cryptographic validation.
+
+DCAB fixes one standards-shaped origin/signature topology, every package member,
+all non-signature bytes, and all stored Word text. It changes only one private
+relationship-selection declaration in the signature manifest, making the
+candidate declare less coverage of an otherwise identical Word relationships
+part. The XMLDSIG-shaped digest and signature values are intentionally fixed
+synthetic placeholders. The pair does not create a cryptographically valid
+signature; calculate or compare digests; validate a signature or certificate;
+establish signer identity, trust, or integrity; open Word; or assert any
+client behavior. Released DocFence 0.40 reports the aggregate static coverage
+transition without exposing the manifest's private values.
 
 ## Design implications
 

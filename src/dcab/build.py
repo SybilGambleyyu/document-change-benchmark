@@ -45,6 +45,8 @@ _TASKPANE_WEB_EXTENSION_TASKPANES_NS = (
 _TASKPANE_WEB_EXTENSION_NS = (
     "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
 )
+_XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
+_OPC_DIGITAL_SIGNATURE_NS = "http://schemas.openxmlformats.org/package/2006/digital-signature"
 
 _DOCX_MAIN_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
@@ -79,6 +81,13 @@ _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE = (
 )
 _TASKPANE_WEB_EXTENSION_CONTENT_TYPE = "application/vnd.ms-office.webextension+xml"
 _PACKAGE_THUMBNAIL_CONTENT_TYPE = "image/png"
+_PACKAGE_DIGITAL_SIGNATURE_ORIGIN_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-package.digital-signature-origin"
+)
+_PACKAGE_DIGITAL_SIGNATURE_XML_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"
+)
+_PACKAGE_RELATIONSHIP_CONTENT_TYPE = "application/vnd.openxmlformats-package.relationships+xml"
 
 _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
 _PACKAGE_THUMBNAIL_RELATIONSHIP = (
@@ -115,6 +124,16 @@ _TASKPANE_WEB_EXTENSION_TASKPANES_RELATIONSHIP = (
 _TASKPANE_WEB_EXTENSION_RELATIONSHIP = (
     "http://schemas.microsoft.com/office/2011/relationships/webextension"
 )
+_PACKAGE_DIGITAL_SIGNATURE_ORIGIN_RELATIONSHIP = (
+    "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin"
+)
+_PACKAGE_DIGITAL_SIGNATURE_RELATIONSHIP = (
+    "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature"
+)
+_OPC_RELATIONSHIP_TRANSFORM_ALGORITHM = (
+    "http://schemas.openxmlformats.org/package/2006/RelationshipTransform"
+)
+_XML_C14N_ALGORITHM = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 
 _VISIBLE_TEXT = "DCAB synthetic static-review fixture"
 _HYPERLINK_DISPLAY_TEXT = "DCAB hyperlink display text"
@@ -132,6 +151,9 @@ _CONTENT_CONTROL_LOCK_TAG = "DCABContentControlLock"
 _CONTENT_CONTROL_LOCK_STATES = frozenset(
     {"unlocked", "sdtLocked", "contentLocked", "sdtContentLocked"}
 )
+_PACKAGE_SIGNATURE_COVERAGE_STATES = frozenset({"complete", "settings_relationship_omitted"})
+_PACKAGE_SIGNATURE_ID = "dcabPackageSignature"
+_PACKAGE_SIGNATURE_OBJECT_ID = "dcabPackageObject"
 _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
@@ -310,6 +332,7 @@ class DocumentVariant:
     save_forms_data: bool | None = None
     save_preview_picture: bool | None = None
     content_control_lock_state: str | None = None
+    package_signature_coverage_state: str | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -731,6 +754,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("word/document.xml",),
     ),
     CaseSpec(
+        case_id="review.package_signature_declared_coverage_changed",
+        title="Static package-signature declaration coverage changed",
+        description=(
+            "A fixed non-cryptographic OPC signature topology retains its package members "
+            "and Word text while one private selected Word relationship is omitted from its "
+            "package-manifest declaration. The pair records a static declaration boundary "
+            "only; it does not assert digest, certificate, trust, or client behavior."
+        ),
+        fact={
+            "kind": "package_signature_coverage_changed",
+            "source": "opc_package_signature",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(package_signature_coverage_state="complete"),
+        candidate=DocumentVariant(package_signature_coverage_state="settings_relationship_omitted"),
+        changed_members=("_xmlsignatures/sig1.xml",),
+    ),
+    CaseSpec(
         case_id="external.subdocument_target_retargeted",
         title="Master-document subdocument target retargeted",
         description=(
@@ -1126,6 +1167,14 @@ def render_package(variant: DocumentVariant) -> bytes:
                 ),
             }
         )
+    if variant.package_signature_coverage_state is not None:
+        members.update(
+            {
+                "_xmlsignatures/origin.sigs": b"",
+                "_xmlsignatures/_rels/origin.sigs.rels": _package_signature_origin_relationships(),
+                "_xmlsignatures/sig1.xml": _package_signature_xml(variant),
+            }
+        )
     return _zip_members(members)
 
 
@@ -1240,6 +1289,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
         and variant.content_control_lock_state not in _CONTENT_CONTROL_LOCK_STATES
     ):
         raise FixtureBuildError("content-control lock state is invalid")
+    if (
+        variant.package_signature_coverage_state is not None
+        and variant.package_signature_coverage_state not in _PACKAGE_SIGNATURE_COVERAGE_STATES
+    ):
+        raise FixtureBuildError("package-signature coverage state is invalid")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1346,6 +1400,19 @@ def _content_types(variant: DocumentVariant) -> bytes:
                 ),
             )
         )
+    if variant.package_signature_coverage_state is not None:
+        overrides.extend(
+            (
+                (
+                    "/_xmlsignatures/origin.sigs",
+                    _PACKAGE_DIGITAL_SIGNATURE_ORIGIN_CONTENT_TYPE,
+                ),
+                (
+                    "/_xmlsignatures/sig1.xml",
+                    _PACKAGE_DIGITAL_SIGNATURE_XML_CONTENT_TYPE,
+                ),
+            )
+        )
     values = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         f'<Types xmlns="{_CONTENT_TYPES_NS}">',
@@ -1360,6 +1427,100 @@ def _content_types(variant: DocumentVariant) -> bytes:
     return "".join(values).encode("utf-8")
 
 
+def _package_signature_origin_relationships() -> bytes:
+    """Return the fixed origin-to-signature relationship for the static fixture."""
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
+        '<Relationship Id="rIdSignature" '
+        f'Type="{_PACKAGE_DIGITAL_SIGNATURE_RELATIONSHIP}" '
+        'Target="sig1.xml"/>'
+        "</Relationships>"
+    ).encode()
+
+
+def _package_signature_xml(variant: DocumentVariant) -> bytes:
+    """Return a fixed, intentionally non-cryptographic package signature.
+
+    The fixture exercises declaration resolution only. Its XMLDSIG-shaped
+    values are deterministic placeholders and must never be treated as a
+    verified signature, certificate, digest, or trust assertion.
+    """
+
+    state = variant.package_signature_coverage_state
+    if state not in _PACKAGE_SIGNATURE_COVERAGE_STATES:
+        raise FixtureBuildError("package-signature coverage state is invalid")
+
+    word_relationship_ids = ["rIdStyles"]
+    if state == "complete":
+        word_relationship_ids.append("rIdSettings")
+    manifest_references = "".join(
+        (
+            _package_signature_relationship_reference(
+                f"/_rels/.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
+                ("rIdOfficeDocument",),
+            ),
+            _package_signature_relationship_reference(
+                f"/word/_rels/document.xml.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
+                tuple(word_relationship_ids),
+            ),
+            _package_signature_part_reference(
+                f"/word/document.xml?ContentType={_DOCX_MAIN_CONTENT_TYPE}"
+            ),
+            _package_signature_part_reference(
+                f"/word/settings.xml?ContentType={_SETTINGS_CONTENT_TYPE}"
+            ),
+            _package_signature_part_reference(
+                f"/word/styles.xml?ContentType={_STYLES_CONTENT_TYPE}"
+            ),
+        )
+    )
+    digest_markup = _package_signature_digest_markup()
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        f'<ds:Signature xmlns:ds="{_XMLDSIG_NS}" '
+        f'xmlns:opc="{_OPC_DIGITAL_SIGNATURE_NS}" Id="{_PACKAGE_SIGNATURE_ID}">'
+        "<ds:SignedInfo>"
+        f'<ds:CanonicalizationMethod Algorithm="{_XML_C14N_ALGORITHM}"/>'
+        '<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>'
+        f'<ds:Reference Type="{_XMLDSIG_NS}Object" URI="#{_PACKAGE_SIGNATURE_OBJECT_ID}">'
+        f"{digest_markup}</ds:Reference></ds:SignedInfo>"
+        "<ds:SignatureValue>DCAB_NONCRYPTOGRAPHIC_SIGNATURE_VALUE</ds:SignatureValue>"
+        f'<ds:Object Id="{_PACKAGE_SIGNATURE_OBJECT_ID}"><ds:Manifest>'
+        f"{manifest_references}</ds:Manifest><ds:SignatureProperties>"
+        f'<ds:SignatureProperty Id="idSignatureTime" Target="#{_PACKAGE_SIGNATURE_ID}">'
+        "<opc:SignatureTime><opc:Format>YYYY-MM-DDThh:mm:ssTZD</opc:Format>"
+        "<opc:Value>1980-01-01T00:00:00Z</opc:Value>"
+        "</opc:SignatureTime></ds:SignatureProperty>"
+        "</ds:SignatureProperties></ds:Object></ds:Signature>"
+    ).encode()
+
+
+def _package_signature_part_reference(uri: str) -> str:
+    return f'<ds:Reference URI="{uri}">{_package_signature_digest_markup()}</ds:Reference>'
+
+
+def _package_signature_relationship_reference(uri: str, source_ids: tuple[str, ...]) -> str:
+    selectors = "".join(
+        f'<opc:RelationshipReference SourceId="{source_id}"/>' for source_id in source_ids
+    )
+    return (
+        f'<ds:Reference URI="{uri}"><ds:Transforms>'
+        f'<ds:Transform Algorithm="{_OPC_RELATIONSHIP_TRANSFORM_ALGORITHM}">'
+        f"{selectors}</ds:Transform>"
+        f'<ds:Transform Algorithm="{_XML_C14N_ALGORITHM}"/>'
+        f"</ds:Transforms>{_package_signature_digest_markup()}</ds:Reference>"
+    )
+
+
+def _package_signature_digest_markup() -> str:
+    return (
+        '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
+        "<ds:DigestValue>DCAB_NONCRYPTOGRAPHIC_DIGEST_VALUE</ds:DigestValue>"
+    )
+
+
 def _root_relationships(variant: DocumentVariant) -> bytes:
     relationships = [
         f'<Relationship Id="rIdOfficeDocument" Type="{_OFFICE_DOCUMENT_RELATIONSHIP}" '
@@ -1369,6 +1530,12 @@ def _root_relationships(variant: DocumentVariant) -> bytes:
         relationships.append(
             f'<Relationship Id="rIdThumbnail" Type="{_PACKAGE_THUMBNAIL_RELATIONSHIP}" '
             'Target="docProps/thumbnail.png"/>'
+        )
+    if variant.package_signature_coverage_state is not None:
+        relationships.append(
+            f'<Relationship Id="rIdSignatureOrigin" '
+            f'Type="{_PACKAGE_DIGITAL_SIGNATURE_ORIGIN_RELATIONSHIP}" '
+            'Target="_xmlsignatures/origin.sigs"/>'
         )
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
