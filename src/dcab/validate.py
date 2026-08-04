@@ -90,7 +90,6 @@ from .build import (
     _PACKAGE_RELATIONSHIP_CONTENT_TYPE,
     _PACKAGE_SIGNATURE_COVERAGE_STATES,
     _PACKAGE_SIGNATURE_ID,
-    _PACKAGE_SIGNATURE_OBJECT_ID,
     _PACKAGE_THUMBNAIL_CONTENT_TYPE,
     _PACKAGE_THUMBNAIL_RELATIONSHIP,
     _PERMISSION_RANGE_MARKER_ID,
@@ -142,6 +141,7 @@ from .build import (
 )
 
 _XML_NS = "http://www.w3.org/XML/1998/namespace"
+_OPC_PACKAGE_SPECIFIC_OBJECT_ID = "idPackageObject"
 
 
 class FixtureValidationError(ValueError):
@@ -475,13 +475,13 @@ def _validate_package_signature(
         or object_reference.attrib
         != {
             "Type": f"{_XMLDSIG_NS}Object",
-            "URI": f"#{_PACKAGE_SIGNATURE_OBJECT_ID}",
+            "URI": f"#{_OPC_PACKAGE_SPECIFIC_OBJECT_ID}",
         }
     ):
         _invalid(spec, f"{side} package SignedInfo references are invalid")
     _validate_package_signature_digest(object_reference, spec, side)
 
-    if package_object.attrib != {"Id": _PACKAGE_SIGNATURE_OBJECT_ID} or [
+    if package_object.attrib != {"Id": _OPC_PACKAGE_SPECIFIC_OBJECT_ID} or [
         child.tag for child in package_object
     ] != [_dsig_tag("Manifest"), _dsig_tag("SignatureProperties")]:
         _invalid(spec, f"{side} package signature object is invalid")

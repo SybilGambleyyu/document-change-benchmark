@@ -48,6 +48,12 @@ Each case contains:
 
 `manifest.jsonl` catalogues the forty-two cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
 
+Version 0.32 normalizes the non-cryptographic package-signature fixture
+carriers to OPC's required package-specific XMLDSIG object identifier,
+`idPackageObject`. The forty-two cases, public facts, fixture schema, and
+reference review convention are unchanged; this is a deterministic private
+signature-topology correction rather than a new benchmark boundary.
+
 Version 0.31 adds a static OPC package-signature relationship-type selector
 reassignment boundary. Both packages retain the same signature-origin topology,
 package members, and stored Word text. A standard

@@ -17,7 +17,7 @@ size_categories:
 
 # Document Change Assurance Benchmark (DCAB)
 
-This dataset mirrors the deterministic fixture corpus from [DCAB v0.31.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.31.0). It contains 42 paired synthetic WordprocessingML cases for static document-change assurance.
+This dataset mirrors the deterministic fixture corpus from [DCAB v0.32.0](https://github.com/SybilGambleyyu/document-change-benchmark/tree/v0.32.0). It contains 42 paired synthetic WordprocessingML cases for static document-change assurance.
 
 Each case directory provides a baseline package, candidate package, and target-free `truth.json`. The public truth files describe only a narrow fact category and a reference review convention. They never disclose URI-like targets, field instructions or fragmented field-code runs, VML shape IDs or target frames, linked-OLE ProgIDs/object IDs/update modes, DrawingML nonvisual object names/descriptions/IDs, raw hidden serialization values, graphic-data URIs, ActiveX control names/class IDs/persistence metadata, document-variable names or values, mail-merge recipient hashes or inclusion values, save-through-XSLT anchors or local solution identifiers, attached-custom-XML-schema namespace values, raw `w:linkStyles`, `w:removePersonalInformation`, `w:savePreviewPicture`, or content-control `w:lock` serialization values, content-control IDs/tags/text, permission marker IDs or individual editor assignments, task-pane web-extension IDs, classic-comment anchors and paragraph IDs, comment author/initial/date/body values, raw `commentsExtended` serialization values, frameset layout/name/size values, package-signature values, manifest object IDs, reference URIs, relationship selectors, signature/origin paths, thumbnail relationship sources/targets, content types, part paths, references, store descriptors, property values, XPath values, relationship IDs, custom XML values, thumbnail image bytes, Markup Compatibility branch bodies, feature-prefix or qualified-name values, compatibility-rule values, or opaque payload bytes.
 
@@ -55,12 +55,14 @@ The content-control-lock pair retains one direct SDT carrier, its fixed ID/tag a
 
 The package-signature pairs retain their signature-origin topology, package
 membership, and stored Word text while changing only private static
-relationship-selection declarations in XMLDSIG-shaped manifests. One uses the
-standard `RelationshipsGroupReference/@SourceType` selector to reassign a
-private relationship type while keeping its public coverage cardinality fixed.
-Their digest and signature values are fixed synthetic placeholders: they
-exercise declared coverage only and do not establish cryptographic validity,
-signer identity, trust, integrity, or a client-side signature result.
+relationship-selection declarations in XMLDSIG-shaped manifests. Their
+package-specific object uses OPC's required `idPackageObject` identifier.
+One uses the standard `RelationshipsGroupReference/@SourceType` selector to
+reassign a private relationship type while keeping its public coverage
+cardinality fixed. Their digest and signature values are fixed synthetic
+placeholders: they exercise declared coverage only and do not establish
+cryptographic validity, signer identity, trust, integrity, or a client-side
+signature result.
 
 ## Reproducibility
 
@@ -75,4 +77,4 @@ This mirror has no special execution requirement. It is provided under the MIT l
 
 ## Scope
 
-DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. In particular, it does not resolve or follow links; retrieve sources, templates, frame documents, or mail-merge data; parse or decode opaque macro, thumbnail, OLE, ActiveX, or alternative-format payloads; interpret unbound custom-XML data; resolve an MCE feature prefix or choose an MCE branch; calculate effective DrawingML visibility or content-control locking; calculate or validate a package signature, digest, certificate, trust, or integrity result; update/evaluate fields; read a form/control value; open Word; save a document; emit a form-data record; generate a thumbnail; activate objects; execute code; synchronize comments or task panes; or assert client behavior. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [v0.31 research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.31.0/RESEARCH.md) for the exact contracts and limits.
+DCAB does not claim client rendering/runtime compatibility or universal security policy. It is a narrow, tool-neutral static-review benchmark. In particular, it does not resolve or follow links; retrieve sources, templates, frame documents, or mail-merge data; parse or decode opaque macro, thumbnail, OLE, ActiveX, or alternative-format payloads; interpret unbound custom-XML data; resolve an MCE feature prefix or choose an MCE branch; calculate effective DrawingML visibility or content-control locking; calculate or validate a package signature, digest, certificate, trust, or integrity result; update/evaluate fields; read a form/control value; open Word; save a document; emit a form-data record; generate a thumbnail; activate objects; execute code; synchronize comments or task panes; or assert client behavior. See the [repository README](https://github.com/SybilGambleyyu/document-change-benchmark) and [v0.32 research notes](https://github.com/SybilGambleyyu/document-change-benchmark/blob/v0.32.0/RESEARCH.md) for the exact contracts and limits.

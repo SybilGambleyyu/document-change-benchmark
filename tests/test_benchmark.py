@@ -737,6 +737,29 @@ def test_package_signature_coverage_pair_has_one_manifest_selection_boundary() -
     ]
 
 
+def test_package_signature_pairs_use_opc_package_specific_object_id() -> None:
+    """Fixture carriers use OPC's fixed package-specific XMLDSIG object ID."""
+
+    xml_dsig_namespace = "http://www.w3.org/2000/09/xmldsig#"
+    object_tag = f"{{{xml_dsig_namespace}}}Object"
+    reference_tag = f"{{{xml_dsig_namespace}}}SignedInfo/{{{xml_dsig_namespace}}}Reference"
+
+    for case_id in (
+        "review.package_signature_declared_coverage_changed",
+        "review.package_signature_relationship_type_coverage_reassigned",
+    ):
+        for filename in ("baseline.docx", "candidate.docx"):
+            with zipfile.ZipFile(FIXTURES / case_id / filename) as package:
+                signature = ET.fromstring(package.read("_xmlsignatures/sig1.xml"))
+
+            package_object = signature.find(object_tag)
+            object_reference = signature.find(reference_tag)
+            assert package_object is not None
+            assert object_reference is not None
+            assert package_object.attrib == {"Id": "idPackageObject"}
+            assert object_reference.attrib["URI"] == "#idPackageObject"
+
+
 def test_package_signature_relationship_type_coverage_pair_has_one_standard_boundary() -> None:
     """A standard group selector changes type without changing coverage cardinality."""
 

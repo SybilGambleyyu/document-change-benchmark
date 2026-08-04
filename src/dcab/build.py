@@ -160,7 +160,7 @@ _PACKAGE_SIGNATURE_COVERAGE_STATES = frozenset(
     }
 )
 _PACKAGE_SIGNATURE_ID = "dcabPackageSignature"
-_PACKAGE_SIGNATURE_OBJECT_ID = "dcabPackageObject"
+_PACKAGE_SIGNATURE_OBJECT_ID = "idPackageObject"
 _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
