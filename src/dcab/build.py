@@ -789,6 +789,19 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("customXml/item1.xml",),
     ),
     CaseSpec(
+        case_id="review.unbound_custom_xml_payload_changed",
+        title="Unbound custom XML payload changed",
+        description=(
+            "A conventional custom XML data store retains its part topology and fixed "
+            "visible text while its unbound synthetic payload changes."
+        ),
+        fact={"kind": "unbound_custom_xml_payload_changed"},
+        review_expectation="review",
+        baseline=DocumentVariant(custom_xml_payload=_CUSTOM_XML_APPROVED),
+        candidate=DocumentVariant(custom_xml_payload=_CUSTOM_XML_CANDIDATE),
+        changed_members=("customXml/item1.xml",),
+    ),
+    CaseSpec(
         case_id="macro.vba_project_payload_changed",
         title="VBA project payload changed",
         description=(
@@ -982,8 +995,6 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("macro-enabled packages must have exactly one inert macro payload")
     if variant.data_binding_xpath is not None and variant.custom_xml_payload is None:
         raise FixtureBuildError("data-binding fixtures require a custom XML payload")
-    if variant.data_binding_xpath is None and variant.custom_xml_payload is not None:
-        raise FixtureBuildError("custom XML fixtures require a data-binding declaration")
     if variant.direct_hyperlink_target is not None and not variant.direct_hyperlink_target:
         raise FixtureBuildError("hyperlink target cannot be empty")
     if variant.vml_shape_hyperlink_target is not None and not variant.vml_shape_hyperlink_target:

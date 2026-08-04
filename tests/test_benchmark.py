@@ -20,15 +20,15 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 33,
-        "fact_count": 33,
+        "case_count": 34,
+        "fact_count": 34,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 33, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 34, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +51,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 64
-    assert loaded_package_count == 66
+    assert loaded_document_count == 66
+    assert loaded_package_count == 68
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -184,6 +184,32 @@ def test_attached_custom_xml_schema_pair_has_one_namespace_boundary() -> None:
     assert [
         node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
     ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]
+
+
+def test_unbound_custom_xml_pair_has_one_opaque_payload_boundary() -> None:
+    """An unbound store changes without adding visible text or a data binding."""
+
+    case = FIXTURES / "review.unbound_custom_xml_payload_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "customXml/item1.xml"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        assert b"dataBinding" not in baseline.read("word/document.xml")
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+        assert baseline.read("customXml/_rels/item1.xml.rels") == candidate.read(
+            "customXml/_rels/item1.xml.rels"
+        )
+        assert baseline.read("customXml/itemProps1.xml") == candidate.read(
+            "customXml/itemProps1.xml"
+        )
 
 
 def test_field_recalculation_on_open_pair_has_one_boolean_boundary() -> None:

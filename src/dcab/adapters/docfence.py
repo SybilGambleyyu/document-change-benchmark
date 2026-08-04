@@ -736,6 +736,14 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             report, "custom_xml_changed", "data_binding_inventory_changed"
         ) and _same_count(report, "data_bindings", "data_binding_count", 1)
         return observed, _evidence("custom_xml_changed", "data_binding_inventory_changed")
+    if kind == "unbound_custom_xml_payload_changed":
+        observed = _has_changes(report, "custom_xml_changed") and all(
+            (
+                _count_pair(report, "custom_xml_part_count", None, 2, 2),
+                _same_count(report, "data_bindings", "data_binding_count", 0),
+            )
+        )
+        return observed, _evidence("custom_xml_changed")
     if kind == "macro_payload_changed":
         observed = _has_changes(report, "macro_payload_changed") and _count_pair(
             report, "macro_present", None, True, True
