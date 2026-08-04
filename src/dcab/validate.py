@@ -38,6 +38,9 @@ from .build import (
     _DOCUMENT_VARIABLE_NAME,
     _DOCX_MAIN_CONTENT_TYPE,
     _DRAWING_NS,
+    _DRAWING_VISIBILITY_GRAPHIC_DATA_URI,
+    _DRAWING_VISIBILITY_OBJECT_ID,
+    _DRAWING_VISIBILITY_OBJECT_NAME,
     _FRAME_LAYOUT,
     _FRAME_NAME,
     _FRAME_RELATIONSHIP,
@@ -551,6 +554,41 @@ def _validate_document_xml(
             or len(pictures) != 1
         ):
             _invalid(spec, f"{side} linked-picture DrawingML shape is invalid")
+
+    drawing_visibility_properties = [
+        element
+        for element in root.iter(_wordprocessing_drawing_tag("docPr"))
+        if element.get("id") == _DRAWING_VISIBILITY_OBJECT_ID
+    ]
+    expected_drawing_visibility_count = int(variant.drawing_object_hidden is not None)
+    if len(drawing_visibility_properties) != expected_drawing_visibility_count:
+        _invalid(spec, f"{side} drawing visibility markup is invalid")
+    if drawing_visibility_properties:
+        drawing_visibility = drawing_visibility_properties[0]
+        expected_attributes = {
+            "id": _DRAWING_VISIBILITY_OBJECT_ID,
+            "name": _DRAWING_VISIBILITY_OBJECT_NAME,
+            "hidden": "true" if variant.drawing_object_hidden else "false",
+        }
+        if drawing_visibility.attrib != expected_attributes:
+            _invalid(spec, f"{side} drawing visibility state is invalid")
+        inline_containers = [
+            element
+            for element in root.iter(_wordprocessing_drawing_tag("inline"))
+            if drawing_visibility in element
+        ]
+        if len(inline_containers) != 1:
+            _invalid(spec, f"{side} drawing visibility markup is invalid")
+        inline = inline_containers[0]
+        graphic_data = inline.find(f".//{{{_DRAWING_NS}}}graphicData")
+        if (
+            graphic_data is None
+            or graphic_data.attrib != {"uri": _DRAWING_VISIBILITY_GRAPHIC_DATA_URI}
+            or list(graphic_data)
+            or (graphic_data.text or "").strip()
+            or (graphic_data.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} drawing visibility markup is invalid")
 
     fields = list(root.iter(_word_tag("fldSimple")))
     expected_field_instructions: list[str] = []

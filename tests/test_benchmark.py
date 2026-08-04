@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 36,
-        "fact_count": 36,
+        "case_count": 37,
+        "fact_count": 37,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 36, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 37, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 70
-    assert loaded_package_count == 72
+    assert loaded_document_count == 72
+    assert loaded_package_count == 74
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -334,6 +334,62 @@ def test_markup_compatibility_pair_has_one_choice_requirement_boundary() -> None
         len(list(baseline_root.iter(f"{{{markup_compatibility_namespace}}}AlternateContent"))) == 1
     )
     assert len(list(baseline_root.iter(f"{{{markup_compatibility_namespace}}}Fallback"))) == 1
+    assert [node.text for node in baseline_root.iter(f"{{{word_namespace}}}t")] == [
+        node.text for node in candidate_root.iter(f"{{{word_namespace}}}t")
+    ]
+
+
+def test_drawing_visibility_pair_has_one_direct_boolean_boundary() -> None:
+    """Only the direct nonvisual DrawingML visibility state changes."""
+
+    case = FIXTURES / "review.drawing_object_hidden_state_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_root = ET.fromstring(baseline_document)
+        candidate_root = ET.fromstring(candidate_document)
+
+    assert candidate_document.replace(b'hidden="true"', b'hidden="false"', 1) == (baseline_document)
+    wordprocessing_drawing_namespace = (
+        "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    )
+    drawing_namespace = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    doc_properties_tag = f"{{{wordprocessing_drawing_namespace}}}docPr"
+    baseline_properties = [
+        element for element in baseline_root.iter(doc_properties_tag) if element.get("id") == "42"
+    ]
+    candidate_properties = [
+        element for element in candidate_root.iter(doc_properties_tag) if element.get("id") == "42"
+    ]
+    assert len(baseline_properties) == len(candidate_properties) == 1
+    assert baseline_properties[0].attrib == {
+        "id": "42",
+        "name": "DCAB drawing visibility object",
+        "hidden": "false",
+    }
+    assert candidate_properties[0].attrib == {
+        "id": "42",
+        "name": "DCAB drawing visibility object",
+        "hidden": "true",
+    }
+    graphic_data_tag = f"{{{drawing_namespace}}}graphicData"
+    baseline_graphic_data = list(baseline_root.iter(graphic_data_tag))
+    candidate_graphic_data = list(candidate_root.iter(graphic_data_tag))
+    assert len(baseline_graphic_data) == len(candidate_graphic_data) == 1
+    assert baseline_graphic_data[0].attrib == {"uri": "urn:dcab:synthetic-drawing-visibility"}
+    assert candidate_graphic_data[0].attrib == baseline_graphic_data[0].attrib
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     assert [node.text for node in baseline_root.iter(f"{{{word_namespace}}}t")] == [
         node.text for node in candidate_root.iter(f"{{{word_namespace}}}t")
     ]

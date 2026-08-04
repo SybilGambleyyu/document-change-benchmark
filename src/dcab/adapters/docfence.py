@@ -813,6 +813,44 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("markup_compatibility_inventory_changed")
+    if kind == "drawing_object_hidden_state_changed":
+        observed = _has_changes(report, "word_drawing_visibility_inventory_changed") and all(
+            (
+                _same_count(
+                    report,
+                    "word_drawing_visibility",
+                    "visibility_declaration_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "word_drawing_visibility",
+                    "visibility_declaration_story_count",
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "word_drawing_visibility",
+                    "hidden_drawing_object_count",
+                    0,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "word_drawing_visibility",
+                    "explicitly_shown_drawing_object_count",
+                    1,
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "word_drawing_visibility",
+                    "invalid_hidden_attribute_count",
+                    0,
+                ),
+            )
+        )
+        return observed, _evidence("word_drawing_visibility_inventory_changed")
     if kind == "macro_payload_changed":
         observed = _has_changes(report, "macro_payload_changed") and _count_pair(
             report, "macro_present", None, True, True

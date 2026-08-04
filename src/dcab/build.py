@@ -128,6 +128,9 @@ _REVISION_TEXT = "DCAB revision carrier"
 _BINDING_TEXT = "DCAB bound-content carrier"
 _MARKUP_COMPATIBILITY_CHOICE_TEXT = "DCAB markup-compatibility choice carrier"
 _MARKUP_COMPATIBILITY_FALLBACK_TEXT = "DCAB markup-compatibility fallback carrier"
+_DRAWING_VISIBILITY_OBJECT_ID = "42"
+_DRAWING_VISIBILITY_OBJECT_NAME = "DCAB drawing visibility object"
+_DRAWING_VISIBILITY_GRAPHIC_DATA_URI = "urn:dcab:synthetic-drawing-visibility"
 _CUSTOM_XML_STORE_ID = "{3B1F8916-697D-4C4E-A4A1-55F64D9F2A80}"
 
 _DIRECT_LINK_APPROVED = "https://approved.example.invalid/dcab-hyperlink"
@@ -301,6 +304,7 @@ class DocumentVariant:
     alternative_format_import_payload: bytes | None = None
     thumbnail_payload: bytes | None = None
     markup_compatibility_choice_requires: str | None = None
+    drawing_object_hidden: bool | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -892,6 +896,20 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("word/document.xml",),
     ),
     CaseSpec(
+        case_id="review.drawing_object_hidden_state_changed",
+        title="DrawingML object hidden state changed",
+        description=(
+            "A compact DrawingML inline keeps its package topology and stored Word text "
+            "fixed while the direct nonvisual wp:docPr hidden attribute changes from "
+            "explicit false to true."
+        ),
+        fact={"kind": "drawing_object_hidden_state_changed"},
+        review_expectation="review",
+        baseline=DocumentVariant(drawing_object_hidden=False),
+        candidate=DocumentVariant(drawing_object_hidden=True),
+        changed_members=("word/document.xml",),
+    ),
+    CaseSpec(
         case_id="macro.vba_project_payload_changed",
         title="VBA project payload changed",
         description=(
@@ -1172,6 +1190,10 @@ def _validate_variant(variant: DocumentVariant) -> None:
         not in _MARKUP_COMPATIBILITY_REQUIRES_PREFIXES
     ):
         raise FixtureBuildError("markup-compatibility Choice requirement is unsupported")
+    if variant.drawing_object_hidden is not None and not isinstance(
+        variant.drawing_object_hidden, bool
+    ):
+        raise FixtureBuildError("drawing object hidden state must be boolean")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -1419,7 +1441,10 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     drawing_namespaces = (
         f' xmlns:a="{_DRAWING_NS}" xmlns:wp="{_WORDPROCESSING_DRAWING_NS}" '
         f'xmlns:pic="{_PICTURE_NS}"'
-        if variant.drawing_linked_picture_target is not None
+        if (
+            variant.drawing_linked_picture_target is not None
+            or variant.drawing_object_hidden is not None
+        )
         else ""
     )
     markup_compatibility_namespaces = (
@@ -1491,6 +1516,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     linked_picture_markup = (
         _linked_picture_markup() if variant.drawing_linked_picture_target is not None else ""
     )
+    drawing_visibility_markup = (
+        _drawing_visibility_markup(variant.drawing_object_hidden)
+        if variant.drawing_object_hidden is not None
+        else ""
+    )
     subdocument_markup = (
         '<w:subDoc r:id="rIdSubDocument"/>' if variant.subdocument_target is not None else ""
     )
@@ -1511,6 +1541,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}"
         f"{markup_compatibility_markup}{binding_markup}"
         f"{ole_markup}{active_x_markup}{linked_ole_markup}{linked_picture_markup}"
+        f"{drawing_visibility_markup}"
         f'</w:p>{subdocument_markup}{alt_chunk_markup}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
         '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
         "</w:body></w:document>"
@@ -1723,6 +1754,22 @@ def _linked_picture_markup() -> str:
         '<a:xfrm><a:off x="0" y="0"/><a:ext cx="12700" cy="12700"/>'
         '</a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic>'
         "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"
+    )
+
+
+def _drawing_visibility_markup(hidden: bool) -> str:
+    """Return one compact inline with a direct stored nonvisual hidden state."""
+
+    value = "true" if hidden else "false"
+    return (
+        "<w:r><w:drawing><wp:inline>"
+        '<wp:extent cx="12700" cy="12700"/>'
+        f'<wp:docPr id="{_DRAWING_VISIBILITY_OBJECT_ID}" '
+        f'name="{_DRAWING_VISIBILITY_OBJECT_NAME}" hidden="{value}"/>'
+        "<wp:cNvGraphicFramePr/>"
+        "<a:graphic><a:graphicData "
+        f'uri="{_DRAWING_VISIBILITY_GRAPHIC_DATA_URI}"/>'
+        "</a:graphic></wp:inline></w:drawing></w:r>"
     )
 
 
