@@ -13,7 +13,9 @@ import html
 import io
 import json
 import stat
+import struct
 import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -74,8 +76,12 @@ _TASKPANE_WEB_EXTENSION_TASKPANES_CONTENT_TYPE = (
     "application/vnd.ms-office.webextensiontaskpanes+xml"
 )
 _TASKPANE_WEB_EXTENSION_CONTENT_TYPE = "application/vnd.ms-office.webextension+xml"
+_PACKAGE_THUMBNAIL_CONTENT_TYPE = "image/png"
 
 _OFFICE_DOCUMENT_RELATIONSHIP = f"{_REL_NS}/officeDocument"
+_PACKAGE_THUMBNAIL_RELATIONSHIP = (
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"
+)
 _HYPERLINK_RELATIONSHIP = f"{_REL_NS}/hyperlink"
 _STYLES_RELATIONSHIP = f"{_REL_NS}/styles"
 _SETTINGS_RELATIONSHIP = f"{_REL_NS}/settings"
@@ -206,6 +212,57 @@ _OPAQUE_ACTIVE_X_APPROVED = b"DCAB inert synthetic ActiveX marker payload: appro
 _OPAQUE_ACTIVE_X_CANDIDATE = b"DCAB inert synthetic ActiveX marker payload: candidate\n"
 
 
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    """Return one deterministic PNG chunk for inert fixture construction."""
+
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
+
+
+def _zlib_stored_block(data: bytes) -> bytes:
+    """Return a fixed zlib stream with one uncompressed final DEFLATE block.
+
+    This avoids relying on a compressor's version-specific block choices while
+    retaining a standards-compliant PNG IDAT stream. The tiny 1×1 scanline is
+    always well below the 65,535-byte stored-block limit.
+    """
+
+    if len(data) > 0xFFFF:
+        raise FixtureBuildError("synthetic PNG scanline is too large")
+    return b"".join(
+        (
+            b"\x78\x01",  # zlib header: DEFLATE, no compression.
+            b"\x01",  # Final stored DEFLATE block, aligned to the next byte.
+            struct.pack("<H", len(data)),
+            struct.pack("<H", 0xFFFF - len(data)),
+            data,
+            struct.pack(">I", zlib.adler32(data) & 0xFFFFFFFF),
+        )
+    )
+
+
+def _synthetic_png(red: int, green: int, blue: int) -> bytes:
+    """Build a valid 1×1 RGB PNG without reading or rendering an image."""
+
+    scanline = b"\x00" + bytes((red, green, blue))
+    return b"".join(
+        (
+            b"\x89PNG\r\n\x1a\n",
+            _png_chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)),
+            _png_chunk(b"IDAT", _zlib_stored_block(scanline)),
+            _png_chunk(b"IEND", b""),
+        )
+    )
+
+
+_THUMBNAIL_APPROVED = _synthetic_png(0x12, 0x34, 0x56)
+_THUMBNAIL_CANDIDATE = _synthetic_png(0x65, 0x43, 0x21)
+
+
 class FixtureBuildError(ValueError):
     """The fixture destination or requested package state is unsafe or invalid."""
 
@@ -238,6 +295,7 @@ class DocumentVariant:
     vml_linked_ole_target: str | None = None
     drawing_linked_picture_target: str | None = None
     alternative_format_import_payload: bytes | None = None
+    thumbnail_payload: bytes | None = None
     hidden_text: bool = False
     insertion_markup: bool = False
     track_revisions: bool = False
@@ -802,6 +860,19 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         changed_members=("customXml/item1.xml",),
     ),
     CaseSpec(
+        case_id="review.package_thumbnail_payload_changed",
+        title="OPC package thumbnail payload changed",
+        description=(
+            "A relationship-bound OPC thumbnail retains its root relationship, image "
+            "content type, and fixed stored Word text while its synthetic PNG payload changes."
+        ),
+        fact={"kind": "package_thumbnail_payload_changed"},
+        review_expectation="review",
+        baseline=DocumentVariant(thumbnail_payload=_THUMBNAIL_APPROVED),
+        candidate=DocumentVariant(thumbnail_payload=_THUMBNAIL_CANDIDATE),
+        changed_members=("docProps/thumbnail.png",),
+    ),
+    CaseSpec(
         case_id="macro.vba_project_payload_changed",
         title="VBA project payload changed",
         description=(
@@ -886,7 +957,7 @@ def render_package(variant: DocumentVariant) -> bytes:
     _validate_variant(variant)
     members: dict[str, bytes] = {
         "[Content_Types].xml": _content_types(variant),
-        "_rels/.rels": _root_relationships(),
+        "_rels/.rels": _root_relationships(variant),
         "word/document.xml": _document_xml(variant),
         "word/_rels/document.xml.rels": _document_relationships(variant),
         "word/settings.xml": _settings_xml(variant),
@@ -912,6 +983,8 @@ def render_package(variant: DocumentVariant) -> bytes:
         )
     if variant.alternative_format_import_payload is not None:
         members["word/afchunk1.html"] = variant.alternative_format_import_payload
+    if variant.thumbnail_payload is not None:
+        members["docProps/thumbnail.png"] = variant.thumbnail_payload
     if variant.custom_xml_payload is not None:
         members.update(
             {
@@ -1072,6 +1145,8 @@ def _validate_variant(variant: DocumentVariant) -> None:
         raise FixtureBuildError("linked-picture target cannot be empty")
     if variant.activex_persistence_payload is not None and not variant.activex_persistence_payload:
         raise FixtureBuildError("ActiveX persistence payload cannot be empty")
+    if variant.thumbnail_payload is not None and not variant.thumbnail_payload:
+        raise FixtureBuildError("package thumbnail payload cannot be empty")
 
 
 def _write_case(case_dir: Path, files: dict[str, bytes], *, force: bool) -> None:
@@ -1113,6 +1188,8 @@ def _content_types(variant: DocumentVariant) -> bytes:
         overrides.append(("/word/recipientData.xml", _MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE))
     if variant.alternative_format_import_payload is not None:
         overrides.append(("/word/afchunk1.html", _ALT_CHUNK_CONTENT_TYPE))
+    if variant.thumbnail_payload is not None:
+        overrides.append(("/docProps/thumbnail.png", _PACKAGE_THUMBNAIL_CONTENT_TYPE))
     if variant.macro_payload is not None:
         overrides.append(("/word/vbaProject.bin", _VBA_PROJECT_CONTENT_TYPE))
     if variant.embedded_payload is not None:
@@ -1160,12 +1237,20 @@ def _content_types(variant: DocumentVariant) -> bytes:
     return "".join(values).encode("utf-8")
 
 
-def _root_relationships() -> bytes:
+def _root_relationships(variant: DocumentVariant) -> bytes:
+    relationships = [
+        f'<Relationship Id="rIdOfficeDocument" Type="{_OFFICE_DOCUMENT_RELATIONSHIP}" '
+        'Target="word/document.xml"/>'
+    ]
+    if variant.thumbnail_payload is not None:
+        relationships.append(
+            f'<Relationship Id="rIdThumbnail" Type="{_PACKAGE_THUMBNAIL_RELATIONSHIP}" '
+            'Target="docProps/thumbnail.png"/>'
+        )
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         f'<Relationships xmlns="{_PACKAGE_REL_NS}">'
-        f'<Relationship Id="rIdOfficeDocument" Type="{_OFFICE_DOCUMENT_RELATIONSHIP}" '
-        'Target="word/document.xml"/>'
+        f"{''.join(relationships)}"
         "</Relationships>"
     ).encode()
 

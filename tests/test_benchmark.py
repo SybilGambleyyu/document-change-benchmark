@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import struct
 import zipfile
+import zlib
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -18,17 +20,41 @@ from dcab.validate import FixtureValidationError, validate_fixture_tree
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
+def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
+    """Verify the inert PNG construction without invoking an image renderer."""
+
+    assert image.startswith(b"\x89PNG\r\n\x1a\n")
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset < len(image):
+        length = struct.unpack(">I", image[offset : offset + 4])[0]
+        kind = image[offset + 4 : offset + 8]
+        payload = image[offset + 8 : offset + 8 + length]
+        crc = struct.unpack(">I", image[offset + 8 + length : offset + 12 + length])[0]
+        assert crc == zlib.crc32(kind + payload) & 0xFFFFFFFF
+        chunks.append((kind, payload))
+        offset += 12 + length
+    assert offset == len(image)
+    assert [kind for kind, _ in chunks] == [b"IHDR", b"IDAT", b"IEND"]
+    assert chunks[0][1] == struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    assert chunks[2][1] == b""
+    scanline = zlib.decompress(chunks[1][1])
+    assert len(scanline) == 4
+    assert scanline[0] == 0
+    return scanline[1], scanline[2], scanline[3]
+
+
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 34,
-        "fact_count": 34,
+        "case_count": 35,
+        "fact_count": 35,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 34, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 35, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -51,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 66
-    assert loaded_package_count == 68
+    assert loaded_document_count == 68
+    assert loaded_package_count == 70
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -210,6 +236,61 @@ def test_unbound_custom_xml_pair_has_one_opaque_payload_boundary() -> None:
         assert baseline.read("customXml/itemProps1.xml") == candidate.read(
             "customXml/itemProps1.xml"
         )
+
+
+def test_package_thumbnail_pair_has_one_opaque_payload_boundary() -> None:
+    """A relationship-bound thumbnail changes without changing Word text/topology."""
+
+    case = FIXTURES / "review.package_thumbnail_payload_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "docProps/thumbnail.png"
+        ]
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        assert baseline.read("_rels/.rels") == candidate.read("_rels/.rels")
+        assert baseline.read("[Content_Types].xml") == candidate.read("[Content_Types].xml")
+        baseline_thumbnail = baseline.read("docProps/thumbnail.png")
+        candidate_thumbnail = candidate.read("docProps/thumbnail.png")
+        root_relationships = ET.fromstring(baseline.read("_rels/.rels"))
+        content_types = ET.fromstring(baseline.read("[Content_Types].xml"))
+
+    package_relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_types_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    assert [relationship.attrib for relationship in root_relationships] == [
+        {
+            "Id": "rIdOfficeDocument",
+            "Type": (
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+            ),
+            "Target": "word/document.xml",
+        },
+        {
+            "Id": "rIdThumbnail",
+            "Type": (
+                "http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"
+            ),
+            "Target": "docProps/thumbnail.png",
+        },
+    ]
+    assert all(
+        relationship.tag == f"{{{package_relationship_namespace}}}Relationship"
+        for relationship in root_relationships
+    )
+    overrides = {
+        child.get("PartName"): child.get("ContentType")
+        for child in content_types
+        if child.tag == f"{{{content_types_namespace}}}Override"
+    }
+    assert overrides["/docProps/thumbnail.png"] == "image/png"
+    assert "docProps/_rels/thumbnail.png.rels" not in members
+    assert baseline_thumbnail != candidate_thumbnail
+    assert _decode_synthetic_thumbnail(baseline_thumbnail) == (0x12, 0x34, 0x56)
+    assert _decode_synthetic_thumbnail(candidate_thumbnail) == (0x65, 0x43, 0x21)
 
 
 def test_field_recalculation_on_open_pair_has_one_boolean_boundary() -> None:

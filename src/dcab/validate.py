@@ -66,6 +66,8 @@ from .build import (
     _OLE_CONTENT_TYPE,
     _OLE_OBJECT_RELATIONSHIP,
     _PACKAGE_REL_NS,
+    _PACKAGE_THUMBNAIL_CONTENT_TYPE,
+    _PACKAGE_THUMBNAIL_RELATIONSHIP,
     _PERMISSION_RANGE_MARKER_ID,
     _PERMISSION_RANGE_TEXT,
     _PICTURE_NS,
@@ -206,6 +208,8 @@ def _validate_package(
             "customXml/_rels/item1.xml.rels",
             "customXml/itemProps1.xml",
         }
+    if variant.thumbnail_payload is not None:
+        expected_members.add("docProps/thumbnail.png")
     if variant.macro_payload is not None:
         expected_members.add("word/vbaProject.bin")
     if variant.embedded_payload is not None:
@@ -241,7 +245,7 @@ def _validate_package(
         _invalid(spec, f"{side} package members are invalid")
 
     _validate_content_types(members, variant, spec, side)
-    _validate_root_relationships(members, spec, side)
+    _validate_root_relationships(members, variant, spec, side)
     _validate_document_relationships(members, variant, spec, side)
     _validate_document_xml(members, variant, spec, side)
     _validate_active_x_control(members, variant, spec, side)
@@ -269,6 +273,11 @@ def _validate_package(
         and members["word/activeX/activeX1.bin"] != variant.activex_persistence_payload
     ):
         _invalid(spec, f"{side} ActiveX persistence payload is invalid")
+    if (
+        variant.thumbnail_payload is not None
+        and members["docProps/thumbnail.png"] != variant.thumbnail_payload
+    ):
+        _invalid(spec, f"{side} package thumbnail payload is invalid")
 
 
 def _validate_content_types(
@@ -307,6 +316,8 @@ def _validate_content_types(
         expected["/word/recipientData.xml"] = _MAIL_MERGE_RECIPIENT_DATA_CONTENT_TYPE
     if variant.alternative_format_import_payload is not None:
         expected["/word/afchunk1.html"] = _ALT_CHUNK_CONTENT_TYPE
+    if variant.thumbnail_payload is not None:
+        expected["/docProps/thumbnail.png"] = _PACKAGE_THUMBNAIL_CONTENT_TYPE
     if variant.macro_payload is not None:
         expected["/word/vbaProject.bin"] = _VBA_PROJECT_CONTENT_TYPE
     if variant.embedded_payload is not None:
@@ -343,22 +354,33 @@ def _validate_content_types(
         _invalid(spec, f"{side} content type defaults are invalid")
 
 
-def _validate_root_relationships(members: dict[str, bytes], spec: CaseSpec, side: str) -> None:
+def _validate_root_relationships(
+    members: dict[str, bytes], variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
     root = _parse_xml(members["_rels/.rels"], spec)
-    if root.tag != f"{{{_PACKAGE_REL_NS}}}Relationships" or len(root) != 1:
+    expected = [
+        {
+            "Id": "rIdOfficeDocument",
+            "Target": "word/document.xml",
+            "Type": _OFFICE_DOCUMENT_RELATIONSHIP,
+        }
+    ]
+    if variant.thumbnail_payload is not None:
+        expected.append(
+            {
+                "Id": "rIdThumbnail",
+                "Target": "docProps/thumbnail.png",
+                "Type": _PACKAGE_THUMBNAIL_RELATIONSHIP,
+            }
+        )
+    if root.tag != f"{{{_PACKAGE_REL_NS}}}Relationships" or len(root) != len(expected):
         _invalid(spec, f"{side} package office-document relationship is invalid")
-    relationship = root[0]
-    expected = {
-        "Id": "rIdOfficeDocument",
-        "Target": "word/document.xml",
-        "Type": _OFFICE_DOCUMENT_RELATIONSHIP,
-    }
-    if (
-        relationship.tag != f"{{{_PACKAGE_REL_NS}}}Relationship"
-        or {key: relationship.get(key) for key in expected} != expected
-        or relationship.get("TargetMode") is not None
-    ):
-        _invalid(spec, f"{side} package office-document relationship is invalid")
+    for relationship, expected_attributes in zip(root, expected, strict=True):
+        if (
+            relationship.tag != f"{{{_PACKAGE_REL_NS}}}Relationship"
+            or relationship.attrib != expected_attributes
+        ):
+            _invalid(spec, f"{side} package relationship is invalid")
 
 
 def _validate_document_relationships(
