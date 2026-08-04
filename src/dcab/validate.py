@@ -28,6 +28,10 @@ from .build import (
     _COMMENTS_EXTENDED_CONTENT_TYPE,
     _COMMENTS_EXTENDED_RELATIONSHIP,
     _COMMENTS_RELATIONSHIP,
+    _CONTENT_CONTROL_LOCK_ID,
+    _CONTENT_CONTROL_LOCK_STATES,
+    _CONTENT_CONTROL_LOCK_TAG,
+    _CONTENT_CONTROL_LOCK_TEXT,
     _CONTENT_TYPES_NS,
     _CONTROL_RELATIONSHIP,
     _CUSTOM_XML_PROPERTIES_CONTENT_TYPE,
@@ -614,6 +618,7 @@ def _validate_document_xml(
     form_data_field_characters, form_data_instruction_texts = _validate_form_data_field(
         root, variant, spec, side
     )
+    _validate_content_control_lock(root, variant, spec, side)
     _validate_complex_include_text_field(
         root,
         variant,
@@ -968,6 +973,68 @@ def _validate_mail_merge_recipient_data(
         )
     ):
         _invalid(spec, f"{side} mail-merge recipient-selection state is invalid")
+
+
+def _validate_content_control_lock(
+    root: ET.Element, variant: DocumentVariant, spec: CaseSpec, side: str
+) -> None:
+    """Validate DCAB's fixed direct content-control-lock carrier."""
+
+    controls = []
+    for control in root.iter(_word_tag("sdt")):
+        properties = next((child for child in control if child.tag == _word_tag("sdtPr")), None)
+        if properties is None:
+            continue
+        if any(
+            child.tag == _word_tag("tag")
+            and child.attrib == {_word_tag("val"): _CONTENT_CONTROL_LOCK_TAG}
+            for child in properties
+        ):
+            controls.append(control)
+    if len(controls) != int(variant.content_control_lock_state is not None):
+        _invalid(spec, f"{side} content-control lock markup is invalid")
+    if not controls:
+        return
+
+    control = controls[0]
+    if control.attrib or len(control) != 2 or (control.text or "").strip():
+        _invalid(spec, f"{side} content-control lock markup is invalid")
+    properties, content = control
+    if (
+        properties.tag != _word_tag("sdtPr")
+        or properties.attrib
+        or len(properties) != 4
+        or (properties.text or "").strip()
+        or (properties.tail or "").strip()
+        or content.tag != _word_tag("sdtContent")
+        or content.attrib
+        or len(content) != 1
+        or (content.text or "").strip()
+        or (content.tail or "").strip()
+    ):
+        _invalid(spec, f"{side} content-control lock markup is invalid")
+    tag, identifier, lock, text_kind = properties
+    if not (
+        _is_empty_element(
+            tag,
+            _word_tag("tag"),
+            {_word_tag("val"): _CONTENT_CONTROL_LOCK_TAG},
+        )
+        and _is_empty_element(
+            identifier,
+            _word_tag("id"),
+            {_word_tag("val"): _CONTENT_CONTROL_LOCK_ID},
+        )
+        and _is_empty_element(
+            lock,
+            _word_tag("lock"),
+            {_word_tag("val"): variant.content_control_lock_state},
+        )
+        and _is_empty_element(text_kind, _word_tag("text"), {})
+        and _is_comment_text_run(content[0], _CONTENT_CONTROL_LOCK_TEXT)
+        and variant.content_control_lock_state in _CONTENT_CONTROL_LOCK_STATES
+    ):
+        _invalid(spec, f"{side} content-control lock markup is invalid")
 
 
 def _validate_form_data_field(

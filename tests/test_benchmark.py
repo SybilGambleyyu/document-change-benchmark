@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 39,
-        "fact_count": 39,
+        "case_count": 40,
+        "fact_count": 40,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 39, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 40, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 76
-    assert loaded_package_count == 78
+    assert loaded_document_count == 78
+    assert loaded_package_count == 80
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -612,6 +612,73 @@ def test_save_preview_picture_pair_has_no_thumbnail_and_one_boolean_boundary() -
     assert [
         node.text for node in ET.fromstring(baseline_document).iter(f"{{{word_namespace}}}t")
     ] == [node.text for node in ET.fromstring(candidate_document).iter(f"{{{word_namespace}}}t")]
+
+
+def test_content_control_lock_pair_has_a_fixed_carrier_and_one_state_boundary() -> None:
+    """Only one direct ``w:lock`` state changes; control identity and text are fixed."""
+
+    case = FIXTURES / "review.content_control_lock_state_changed"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "word/document.xml"
+        ]
+        baseline_document = baseline.read("word/document.xml")
+        candidate_document = candidate.read("word/document.xml")
+        baseline_settings = baseline.read("word/settings.xml")
+        candidate_settings = candidate.read("word/settings.xml")
+
+    assert baseline_settings == candidate_settings
+    assert (
+        candidate_document.replace(b'w:val="sdtContentLocked"', b'w:val="unlocked"', 1)
+        == baseline_document
+    )
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    def tag(local_name: str) -> str:
+        return f"{{{word_namespace}}}{local_name}"
+
+    baseline_root = ET.fromstring(baseline_document)
+    candidate_root = ET.fromstring(candidate_document)
+    baseline_controls = list(baseline_root.iter(tag("sdt")))
+    candidate_controls = list(candidate_root.iter(tag("sdt")))
+    assert len(baseline_controls) == len(candidate_controls) == 1
+    baseline_properties, baseline_content = baseline_controls[0]
+    candidate_properties, candidate_content = candidate_controls[0]
+    assert [child.tag for child in baseline_properties] == [
+        tag("tag"),
+        tag("id"),
+        tag("lock"),
+        tag("text"),
+    ]
+    assert [child.tag for child in candidate_properties] == [
+        tag("tag"),
+        tag("id"),
+        tag("lock"),
+        tag("text"),
+    ]
+    value_attribute = tag("val")
+    assert baseline_properties[0].attrib == {value_attribute: "DCABContentControlLock"}
+    assert candidate_properties[0].attrib == {value_attribute: "DCABContentControlLock"}
+    assert baseline_properties[1].attrib == {value_attribute: "73"}
+    assert candidate_properties[1].attrib == {value_attribute: "73"}
+    assert baseline_properties[2].attrib == {value_attribute: "unlocked"}
+    assert candidate_properties[2].attrib == {value_attribute: "sdtContentLocked"}
+    assert not list(baseline_properties[2])
+    assert not list(candidate_properties[2])
+    assert [node.text for node in baseline_content.iter(tag("t"))] == [
+        "DCAB content-control lock carrier"
+    ]
+    assert [node.text for node in candidate_content.iter(tag("t"))] == [
+        "DCAB content-control lock carrier"
+    ]
+    assert [node.text for node in baseline_root.iter(tag("t"))] == [
+        node.text for node in candidate_root.iter(tag("t"))
+    ]
 
 
 def test_mail_merge_recipient_active_pair_has_a_fixed_topology_and_one_state_boundary() -> None:

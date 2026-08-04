@@ -528,6 +528,47 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("save_preview_picture_inventory_changed")
+    if kind == "content_control_lock_state_changed":
+        observed = _has_changes(report, "content_control_lock_inventory_changed") and all(
+            (
+                _count_pair(
+                    report,
+                    "content_control_locks",
+                    "content_control_no_lock_declaration_count",
+                    0,
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "content_control_locks",
+                    "content_control_lock_unlocked_count",
+                    1,
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "content_control_locks",
+                    "content_control_lock_sdt_locked_count",
+                    0,
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "content_control_locks",
+                    "content_control_lock_content_locked_count",
+                    0,
+                    0,
+                ),
+                _count_pair(
+                    report,
+                    "content_control_locks",
+                    "content_control_lock_sdt_content_locked_count",
+                    0,
+                    1,
+                ),
+            )
+        )
+        return observed, _evidence("content_control_lock_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

@@ -82,6 +82,28 @@ will generate or display one. Released DocFence 0.38 maps the aggregate state
 transition without exposing the setting serialization or inferring an existing
 thumbnail.
 
+## Content-control lock boundary
+
+The Open XML SDK documents [`w:lock`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.lock?view=openxml-3.0.1)
+as the lock setting for a structured document tag and lists the exact
+[`LockingValues`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.lockingvalues?view=openxml-3.0.1):
+`sdtLocked`, `contentLocked`, `unlocked`, and `sdtContentLocked`. Microsoft’s
+[content-control guidance](https://learn.microsoft.com/en-us/office/vba/word/concepts/working-with-word/working-with-content-controls)
+also distinguishes editing a control's contents from deleting a control. This
+is a meaningful template-review surface, but it is not a generic access-control
+or runtime-enforcement test.
+
+The pair fixes a direct `w:sdt` carrier, its ID and tag, the `w:sdtContent`
+text, all other Word text, and every package member. It changes only the direct
+`w:sdtPr/w:lock/@w:val` state from explicit `unlocked` to
+`sdtContentLocked` in `word/document.xml`. The `w:lock` contract notes that an
+omitted leaf can have type-specific behavior for group controls, so DCAB does
+not collapse absence into `unlocked` or attempt to model effective restrictions.
+It does not open Word, inspect a user/control value, change a control, apply
+document protection, identify a user, or assert that a client honors the
+stored declaration. Released DocFence 0.39 detects the aggregate static change
+while keeping control identity and contents private.
+
 ## Design implications
 
 1. The oracle must be deliberately partial and target-free. A benchmark should not force tools to disclose URL-like destinations, field arguments, data-binding XPath values, or opaque payload fingerprints.

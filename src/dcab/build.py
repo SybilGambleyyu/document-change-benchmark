@@ -126,6 +126,12 @@ _FORM_DATA_FIELD_NAME = "DCABFormData"
 _FORM_DATA_FIELD_DEFAULT = "DCAB form-data default"
 _FORM_DATA_FIELD_RESULT = "DCAB form-data field value"
 _FORM_DATA_FIELD_MAX_LENGTH = "64"
+_CONTENT_CONTROL_LOCK_TEXT = "DCAB content-control lock carrier"
+_CONTENT_CONTROL_LOCK_ID = "73"
+_CONTENT_CONTROL_LOCK_TAG = "DCABContentControlLock"
+_CONTENT_CONTROL_LOCK_STATES = frozenset(
+    {"unlocked", "sdtLocked", "contentLocked", "sdtContentLocked"}
+)
 _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
 _HIDDEN_TEXT = "DCAB hidden-text carrier"
 _REVISION_TEXT = "DCAB revision carrier"
@@ -303,6 +309,7 @@ class DocumentVariant:
     personal_information_removal_on_save: bool | None = None
     save_forms_data: bool | None = None
     save_preview_picture: bool | None = None
+    content_control_lock_state: str | None = None
     subdocument_target: str | None = None
     frameset_source_target: str | None = None
     vml_linked_ole_target: str | None = None
@@ -704,6 +711,24 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         baseline=DocumentVariant(save_preview_picture=False),
         candidate=DocumentVariant(save_preview_picture=True),
         changed_members=("word/settings.xml",),
+    ),
+    CaseSpec(
+        case_id="review.content_control_lock_state_changed",
+        title="Content-control lock state changed",
+        description=(
+            "A single direct w:sdtPr/w:lock declaration changes from explicit "
+            "unlocked to content-and-SDT locked while the content control's ID, tag, "
+            "stored text, and package membership remain fixed. The pair records static "
+            "markup only and does not open a client or claim enforcement."
+        ),
+        fact={
+            "kind": "content_control_lock_state_changed",
+            "source": "word_content_control",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(content_control_lock_state="unlocked"),
+        candidate=DocumentVariant(content_control_lock_state="sdtContentLocked"),
+        changed_members=("word/document.xml",),
     ),
     CaseSpec(
         case_id="external.subdocument_target_retargeted",
@@ -1210,6 +1235,11 @@ def _validate_variant(variant: DocumentVariant) -> None:
         variant.save_preview_picture, bool
     ):
         raise FixtureBuildError("save-preview-picture setting must be boolean")
+    if (
+        variant.content_control_lock_state is not None
+        and variant.content_control_lock_state not in _CONTENT_CONTROL_LOCK_STATES
+    ):
+        raise FixtureBuildError("content-control lock state is invalid")
     if variant.subdocument_target is not None and not variant.subdocument_target:
         raise FixtureBuildError("subdocument target cannot be empty")
     if variant.frameset_source_target is not None and not variant.frameset_source_target:
@@ -1537,6 +1567,11 @@ def _document_xml(variant: DocumentVariant) -> bytes:
     form_data_field_markup = (
         _form_data_field_markup() if variant.save_forms_data is not None else ""
     )
+    content_control_lock_markup = (
+        _content_control_lock_markup(variant.content_control_lock_state)
+        if variant.content_control_lock_state is not None
+        else ""
+    )
     permission_range_markup = (
         _permission_range_markup(variant.permission_range_editor)
         if variant.permission_range_editor is not None
@@ -1587,6 +1622,7 @@ def _document_xml(variant: DocumentVariant) -> bytes:
         f"{_run(_VISIBLE_TEXT)}{hyperlink_markup}{vml_shape_hyperlink_markup}"
         f"{hyperlink_field_markup}{include_field_markup}"
         f"{dde_field_markup}{document_variable_field_markup}{form_data_field_markup}"
+        f"{content_control_lock_markup}"
         f"{permission_range_markup}"
         f"{modern_comment_anchor_markup}{hidden_markup}{revision_markup}"
         f"{markup_compatibility_markup}{binding_markup}"
@@ -1642,6 +1678,25 @@ def _form_data_field_markup() -> str:
         '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
         f"{_run(_FORM_DATA_FIELD_RESULT)}"
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    )
+
+
+def _content_control_lock_markup(state: str) -> str:
+    """Return one fixed content-control carrier with a direct lock declaration.
+
+    The fixture retains a normal stored ``w:sdt`` shape and changes only the
+    exact ``w:lock/@w:val`` token. It does not read a control value, open a
+    document client, apply a lock, or make an effective-enforcement claim.
+    """
+
+    return (
+        "<w:sdt><w:sdtPr>"
+        f'<w:tag w:val="{_CONTENT_CONTROL_LOCK_TAG}"/>'
+        f'<w:id w:val="{_CONTENT_CONTROL_LOCK_ID}"/>'
+        f'<w:lock w:val="{state}"/><w:text/>'
+        "</w:sdtPr><w:sdtContent>"
+        f"{_run(_CONTENT_CONTROL_LOCK_TEXT)}"
+        "</w:sdtContent></w:sdt>"
     )
 
 

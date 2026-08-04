@@ -1,13 +1,15 @@
 # Document Change Assurance Benchmark (DCAB)
 
-DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies thirty-nine paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
+DCAB is an open, deterministic corpus for evaluating static review tools that compare WordprocessingML packages. It supplies forty paired synthetic `.docx`/`.docm` fixtures, a privacy-safe public oracle, an observation schema, and a scorer.
 
 It is for a question ordinary text diffs do not answer well: did a document change in a stored review-sensitive surface even when ordinary text is unchanged? The corpus covers direct Word and legacy VML shape hyperlinks, simple and fragmented complex field instructions, DDE field sources and persisted document variables, editable-range permission markup, task-pane Office web-extension configuration, Office 2013 `commentsExtended` done metadata, attached-template, mail-merge data-source and recipient-selection settings, save-through-XSLT, automatic-field-recalculation-on-open, automatic-template-style-update-on-open, and personal-information-removal-on-save configuration, master-subdocument, frameset-source, legacy VML linked-OLE, and DrawingML linked-picture relationships and direct nonvisual visibility declarations, alternative-format import payloads, hidden text and revision markup, review settings and document protection, content-control bindings, bound and unbound custom XML, relationship-bound OPC package thumbnail payloads, OOXML Markup Compatibility choice requirements, plus opaque macro, embedded-OLE, and ActiveX control-persistence payload boundaries.
 
 It also includes form-data-only-save configuration, represented by a direct
 `w:saveFormsData` setting transition with a fixed legacy `FORMTEXT` carrier,
 and preview-thumbnail-on-save configuration, represented by a direct
-`w:savePreviewPicture` setting transition with no thumbnail image part.
+`w:savePreviewPicture` setting transition with no thumbnail image part, plus a
+direct content-control `w:sdtPr/w:lock` state transition with a fixed SDT
+carrier.
 
 DCAB is not a Word renderer, a macro scanner, a field evaluator, or a runtime behavior benchmark. It never resolves an external target, opens Word, updates a field, parses an opaque payload, instantiates an ActiveX control, or executes code.
 
@@ -42,7 +44,18 @@ Each case contains:
 - `candidate.docx` or `candidate.docm`
 - `truth.json`, a target-free public assertion
 
-`manifest.jsonl` catalogues the thirty-nine cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+`manifest.jsonl` catalogues the forty cases. Every pair has the same package-member set, differs only at a declared member boundary, and retains the same sequence of stored `w:t` values. That invariant is intentionally narrower than visual or client-runtime equivalence.
+
+Version 0.29 adds a direct content-control `w:sdtPr/w:lock` transition from
+explicit `unlocked` to `sdtContentLocked`. Both packages retain the same
+content-control ID, tag, stored text, package topology, and all other stored
+Word text; only `word/document.xml` changes. The pair captures a direct stored
+declaration only: it does not infer a lock from an omitted leaf, determine a
+control type or effective editing behavior, open Word, read a control value,
+apply a lock, or claim client enforcement. Fixture schema version 1 and the
+truth and observation envelopes are unchanged. An earlier observation can
+still be parsed, but it is incomplete when scored against this forty-case
+catalogue.
 
 Version 0.28 adds a direct `w:savePreviewPicture` transition from explicitly
 disabled to enabled. Both packages retain no thumbnail relationship or image
@@ -119,6 +132,7 @@ Version 0.22 added a direct `w:removePersonalInformation` transition from explic
 | `review.personal_information_removal_on_save_enabled` | `personal_information_removal_on_save_enabled` | review |
 | `review.save_forms_data_enabled` | `save_forms_data_enabled` | review |
 | `review.save_preview_picture_enabled` | `save_preview_picture_enabled` | review |
+| `review.content_control_lock_state_changed` | `content_control_lock_state_changed` | review |
 | `external.subdocument_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.frameset_source_target_retargeted` | `external_document_dependency_target_changed` | block |
 | `external.vml_linked_ole_object_target_retargeted` | `vml_linked_ole_object_target_changed` | block |
@@ -202,6 +216,16 @@ Office's [web-extension XML format](https://learn.microsoft.com/en-us/openspecs/
 The [`commentsExtended` part](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-docx/31f689cd-4192-4c2d-8d2f-202b1f8f20e9) carries additional information about comments represented by the classic comments part. Microsoft's [`w15:commentEx` schema documentation](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.office2013.word.commentex?view=openxml-3.0.1) specifies that it is available in Office 2013 and later, ties `paraId` to the associated comment's final paragraph, and defines `done="1"` as a user indication that the comment is done. DCAB fixes one anchored classic comment, its matching paragraph identifier, both internal relationships, and all other extension inventory while changing only the explicit stored `done` value from `0` to `1`. It does not open a Word client, infer an authenticated identity, resolve a comment thread, synchronize with a service, or claim a particular comment UI/state-transition behavior.
 
 An attached template is another relationship-backed setting: [Microsoft's Office Open XML notes](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oe376/7713efa6-b1ff-4cbd-9339-5bf9018433ac) specify that Word obtains its template path through the `attachedTemplate` relationship. A [`w:dataSource`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.datasourcereference?view=openxml-3.0.1) element identifies the external source connected for a mail merge through a `mailMergeSource` relationship. [Microsoft's Word field specification for `DDE`](https://learn.microsoft.com/en-us/openspecs/office_standards/ms-oi29500/a2c3a25a-1dba-40da-be7a-47cf63c78d55) defines separate application, source-file, and source-item arguments; DCAB fixes the first and third and changes only the stored source-file argument, without processing the field or starting an application. [`w:docVars`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.documentvariables?view=openxml-3.0.1) persists document-variable name/value pairs, and Microsoft documents that they can be shown by a [`DOCVARIABLE` field](https://learn.microsoft.com/en-us/office/vba/api/word.variable). DCAB fixes that field reference and variable name while changing only the persisted value, without evaluating a field. [`w:permStart`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.permstart?view=openxml-3.0.1) and [`w:permEnd`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.permend?view=openxml-3.0.1) form paired editable-range permission markup through a shared marker ID. DCAB fixes one paired boundary and its covered stored text while changing only a synthetic individual editor assignment; it does not infer an effective permission or authenticated identity. A [`w:subDoc`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.subdocumentreference?view=openxml-3.0.1) anchor identifies a separate master-document subdocument through an external relationship. A DrawingML [`a:blip` `r:link`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.blip.link?view=openxml-3.0.1) identifies an image outside the file. A [`w:altChunk`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.altchunk?view=openxml-3.0.1) anchor identifies internally stored alternate content for import. DCAB models those static relationship and payload boundaries without resolving or importing them or claiming a client will process them. The other cases follow explicit WordprocessingML constructs: [`w:vanish`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.vanish?view=openxml-3.0.1), [`w:ins`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.insertedrun?view=openxml-3.0.1), Track Changes and protection in [settings](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.settings?view=openxml-3.0.1), and [`w:documentProtection`](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.documentprotection?view=openxml-3.0.1). Document protection is deliberately represented without password material and should not be interpreted as cryptographic protection.
+
+The Open XML SDK's [`w:lock` contract](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.lock?view=openxml-3.0.1) and
+[`LockingValues` enum](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.lockingvalues?view=openxml-3.0.1)
+distinguish SDT deletion locking, content editing locking, both, and explicit
+`unlocked`. The element contract also gives omitted `w:lock` type-specific
+behavior for group controls. DCAB consequently fixes one ordinary SDT carrier
+and changes only an explicit direct value; it does not model an omitted leaf,
+classify a control type, or claim an effective runtime restriction. Released
+DocFence 0.39 maps the aggregate static transition without exposing control
+identity or content.
 
 ## Tool-neutral observations
 
