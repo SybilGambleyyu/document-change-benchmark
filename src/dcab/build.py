@@ -151,7 +151,14 @@ _CONTENT_CONTROL_LOCK_TAG = "DCABContentControlLock"
 _CONTENT_CONTROL_LOCK_STATES = frozenset(
     {"unlocked", "sdtLocked", "contentLocked", "sdtContentLocked"}
 )
-_PACKAGE_SIGNATURE_COVERAGE_STATES = frozenset({"complete", "settings_relationship_omitted"})
+_PACKAGE_SIGNATURE_COVERAGE_STATES = frozenset(
+    {
+        "complete",
+        "settings_relationship_omitted",
+        "styles_relationship_type_selected",
+        "settings_relationship_type_selected",
+    }
+)
 _PACKAGE_SIGNATURE_ID = "dcabPackageSignature"
 _PACKAGE_SIGNATURE_OBJECT_ID = "dcabPackageObject"
 _PERMISSION_RANGE_TEXT = "DCAB editable-range carrier"
@@ -769,6 +776,29 @@ CASE_SPECS: tuple[CaseSpec, ...] = (
         review_expectation="review",
         baseline=DocumentVariant(package_signature_coverage_state="complete"),
         candidate=DocumentVariant(package_signature_coverage_state="settings_relationship_omitted"),
+        changed_members=("_xmlsignatures/sig1.xml",),
+    ),
+    CaseSpec(
+        case_id="review.package_signature_relationship_type_coverage_reassigned",
+        title="Static package-signature relationship-type coverage reassigned",
+        description=(
+            "A fixed non-cryptographic OPC signature topology retains its package members "
+            "and Word text while a standard relationship-type selector is reassigned "
+            "between two private Word relationship types. Both sides select one "
+            "relationship, so the pair records a same-count static declaration boundary "
+            "only; it does not assert digest, certificate, trust, or client behavior."
+        ),
+        fact={
+            "kind": "package_signature_coverage_changed",
+            "source": "opc_package_signature_relationship_type",
+        },
+        review_expectation="review",
+        baseline=DocumentVariant(
+            package_signature_coverage_state="styles_relationship_type_selected"
+        ),
+        candidate=DocumentVariant(
+            package_signature_coverage_state="settings_relationship_type_selected"
+        ),
         changed_members=("_xmlsignatures/sig1.xml",),
     ),
     CaseSpec(
@@ -1452,19 +1482,34 @@ def _package_signature_xml(variant: DocumentVariant) -> bytes:
     if state not in _PACKAGE_SIGNATURE_COVERAGE_STATES:
         raise FixtureBuildError("package-signature coverage state is invalid")
 
-    word_relationship_ids = ["rIdStyles"]
-    if state == "complete":
-        word_relationship_ids.append("rIdSettings")
+    word_relationship_uri = (
+        f"/word/_rels/document.xml.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}"
+    )
+    if state == "styles_relationship_type_selected":
+        word_relationship_manifest_reference = _package_signature_relationship_type_reference(
+            word_relationship_uri,
+            _STYLES_RELATIONSHIP,
+        )
+    elif state == "settings_relationship_type_selected":
+        word_relationship_manifest_reference = _package_signature_relationship_type_reference(
+            word_relationship_uri,
+            _SETTINGS_RELATIONSHIP,
+        )
+    else:
+        word_relationship_ids = ["rIdStyles"]
+        if state == "complete":
+            word_relationship_ids.append("rIdSettings")
+        word_relationship_manifest_reference = _package_signature_relationship_reference(
+            word_relationship_uri,
+            tuple(word_relationship_ids),
+        )
     manifest_references = "".join(
         (
             _package_signature_relationship_reference(
                 f"/_rels/.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
                 ("rIdOfficeDocument",),
             ),
-            _package_signature_relationship_reference(
-                f"/word/_rels/document.xml.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
-                tuple(word_relationship_ids),
-            ),
+            word_relationship_manifest_reference,
             _package_signature_part_reference(
                 f"/word/document.xml?ContentType={_DOCX_MAIN_CONTENT_TYPE}"
             ),
@@ -1509,6 +1554,19 @@ def _package_signature_relationship_reference(uri: str, source_ids: tuple[str, .
         f'<ds:Reference URI="{uri}"><ds:Transforms>'
         f'<ds:Transform Algorithm="{_OPC_RELATIONSHIP_TRANSFORM_ALGORITHM}">'
         f"{selectors}</ds:Transform>"
+        f'<ds:Transform Algorithm="{_XML_C14N_ALGORITHM}"/>'
+        f"</ds:Transforms>{_package_signature_digest_markup()}</ds:Reference>"
+    )
+
+
+def _package_signature_relationship_type_reference(uri: str, source_type: str) -> str:
+    """Return a standard OPC relationship-type selection reference."""
+
+    return (
+        f'<ds:Reference URI="{uri}"><ds:Transforms>'
+        f'<ds:Transform Algorithm="{_OPC_RELATIONSHIP_TRANSFORM_ALGORITHM}">'
+        f'<opc:RelationshipsGroupReference SourceType="{source_type}"/>'
+        f"</ds:Transform>"
         f'<ds:Transform Algorithm="{_XML_C14N_ALGORITHM}"/>'
         f"</ds:Transforms>{_package_signature_digest_markup()}</ds:Reference>"
     )

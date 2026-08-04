@@ -46,15 +46,15 @@ def _decode_synthetic_thumbnail(image: bytes) -> tuple[int, int, int]:
 
 def test_checked_in_fixtures_validate() -> None:
     assert validate_fixture_tree(FIXTURES) == {
-        "case_count": 41,
-        "fact_count": 41,
+        "case_count": 42,
+        "fact_count": 42,
         "fixture_schema_version": 1,
     }
 
 
 def test_fixture_generation_is_byte_reproducible(tmp_path: Path) -> None:
     rebuilt = tmp_path / "fixtures"
-    assert build_fixtures(rebuilt) == {"case_count": 41, "fixture_schema_version": 1}
+    assert build_fixtures(rebuilt) == {"case_count": 42, "fixture_schema_version": 1}
     assert _tree_digests(rebuilt) == _tree_digests(FIXTURES)
 
 
@@ -77,8 +77,8 @@ def test_python_docx_opens_every_docx_and_its_opc_reader_opens_all_packages() ->
                 document = Document(path)
                 assert document.element.body is not None
                 loaded_document_count += 1
-    assert loaded_document_count == 80
-    assert loaded_package_count == 82
+    assert loaded_document_count == 82
+    assert loaded_package_count == 84
 
 
 def test_mail_merge_source_pair_has_a_fixed_anchor_and_one_target_boundary() -> None:
@@ -729,6 +729,80 @@ def test_package_signature_coverage_pair_has_one_manifest_selection_boundary() -
 
     assert selected_word_relationship_ids(baseline_signature) == ["rIdStyles", "rIdSettings"]
     assert selected_word_relationship_ids(candidate_signature) == ["rIdStyles"]
+    word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    baseline_document = Document(case / "baseline.docx")
+    candidate_document = Document(case / "candidate.docx")
+    assert [node.text for node in baseline_document.element.iter(f"{{{word_namespace}}}t")] == [
+        node.text for node in candidate_document.element.iter(f"{{{word_namespace}}}t")
+    ]
+
+
+def test_package_signature_relationship_type_coverage_pair_has_one_standard_boundary() -> None:
+    """A standard group selector changes type without changing coverage cardinality."""
+
+    case = FIXTURES / "review.package_signature_relationship_type_coverage_reassigned"
+    with (
+        zipfile.ZipFile(case / "baseline.docx") as baseline,
+        zipfile.ZipFile(case / "candidate.docx") as candidate,
+    ):
+        members = sorted(baseline.namelist())
+        assert members == sorted(candidate.namelist())
+        assert [name for name in members if baseline.read(name) != candidate.read(name)] == [
+            "_xmlsignatures/sig1.xml"
+        ]
+        assert baseline.read("_rels/.rels") == candidate.read("_rels/.rels")
+        assert baseline.read("word/document.xml") == candidate.read("word/document.xml")
+        assert baseline.read("word/_rels/document.xml.rels") == candidate.read(
+            "word/_rels/document.xml.rels"
+        )
+        relationships = ET.fromstring(baseline.read("word/_rels/document.xml.rels"))
+        baseline_signature = ET.fromstring(baseline.read("_xmlsignatures/sig1.xml"))
+        candidate_signature = ET.fromstring(candidate.read("_xmlsignatures/sig1.xml"))
+
+    xml_dsig_namespace = "http://www.w3.org/2000/09/xmldsig#"
+    opc_signature_namespace = "http://schemas.openxmlformats.org/package/2006/digital-signature"
+    relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    relationship_transform_algorithm = (
+        "http://schemas.openxmlformats.org/package/2006/RelationshipTransform"
+    )
+    canonicalization_algorithm = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+
+    def selected_word_relationship_type(signature: ET.Element) -> str:
+        manifest = signature.find(
+            f"{{{xml_dsig_namespace}}}Object/{{{xml_dsig_namespace}}}Manifest"
+        )
+        assert manifest is not None
+        reference = next(
+            child
+            for child in manifest
+            if child.get("URI", "").startswith("/word/_rels/document.xml.rels?")
+        )
+        transforms = reference.find(f"{{{xml_dsig_namespace}}}Transforms")
+        assert transforms is not None
+        assert [child.tag for child in transforms] == [
+            f"{{{xml_dsig_namespace}}}Transform",
+            f"{{{xml_dsig_namespace}}}Transform",
+        ]
+        relationship_transform, canonicalization = transforms
+        assert relationship_transform.attrib == {"Algorithm": relationship_transform_algorithm}
+        assert canonicalization.attrib == {"Algorithm": canonicalization_algorithm}
+        assert [child.tag for child in relationship_transform] == [
+            f"{{{opc_signature_namespace}}}RelationshipsGroupReference"
+        ]
+        selector = relationship_transform[0]
+        assert selector.attrib.keys() == {"SourceType"}
+        assert not list(selector)
+        assert not (selector.text or "").strip()
+        return selector.attrib["SourceType"]
+
+    relationship_types = {
+        child.attrib["Id"]: child.attrib["Type"]
+        for child in relationships
+        if child.tag == f"{{{relationship_namespace}}}Relationship"
+    }
+    assert selected_word_relationship_type(baseline_signature) == relationship_types["rIdStyles"]
+    assert selected_word_relationship_type(candidate_signature) == relationship_types["rIdSettings"]
+    assert relationship_types["rIdStyles"] != relationship_types["rIdSettings"]
     word_namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     baseline_document = Document(case / "baseline.docx")
     candidate_document = Document(case / "candidate.docx")

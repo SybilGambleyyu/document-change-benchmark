@@ -486,17 +486,29 @@ def _validate_package_signature(
     ] != [_dsig_tag("Manifest"), _dsig_tag("SignatureProperties")]:
         _invalid(spec, f"{side} package signature object is invalid")
     manifest, signature_properties = package_object
-    expected_word_relationship_ids = ("rIdStyles",)
-    if state == "complete":
-        expected_word_relationship_ids += ("rIdSettings",)
+    expected_word_relationship_selectors: tuple[tuple[str, str, str], ...]
+    if state == "styles_relationship_type_selected":
+        expected_word_relationship_selectors = (
+            ("RelationshipsGroupReference", "SourceType", _STYLES_RELATIONSHIP),
+        )
+    elif state == "settings_relationship_type_selected":
+        expected_word_relationship_selectors = (
+            ("RelationshipsGroupReference", "SourceType", _SETTINGS_RELATIONSHIP),
+        )
+    else:
+        expected_word_relationship_selectors = (("RelationshipReference", "SourceId", "rIdStyles"),)
+        if state == "complete":
+            expected_word_relationship_selectors += (
+                ("RelationshipReference", "SourceId", "rIdSettings"),
+            )
     expected_references = (
         (
             f"/_rels/.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
-            ("rIdOfficeDocument",),
+            (("RelationshipReference", "SourceId", "rIdOfficeDocument"),),
         ),
         (
             f"/word/_rels/document.xml.rels?ContentType={_PACKAGE_RELATIONSHIP_CONTENT_TYPE}",
-            expected_word_relationship_ids,
+            expected_word_relationship_selectors,
         ),
         (f"/word/document.xml?ContentType={_DOCX_MAIN_CONTENT_TYPE}", None),
         (f"/word/settings.xml?ContentType={_SETTINGS_CONTENT_TYPE}", None),
@@ -504,22 +516,22 @@ def _validate_package_signature(
     )
     if len(manifest) != len(expected_references):
         _invalid(spec, f"{side} package manifest reference count is invalid")
-    for reference, (uri, relationship_ids) in zip(manifest, expected_references, strict=True):
-        _validate_package_manifest_reference(reference, uri, relationship_ids, spec, side)
+    for reference, (uri, relationship_selectors) in zip(manifest, expected_references, strict=True):
+        _validate_package_manifest_reference(reference, uri, relationship_selectors, spec, side)
     _validate_package_signature_properties(signature_properties, spec, side)
 
 
 def _validate_package_manifest_reference(
     reference: ET.Element,
     uri: str,
-    relationship_ids: tuple[str, ...] | None,
+    relationship_selectors: tuple[tuple[str, str, str], ...] | None,
     spec: CaseSpec,
     side: str,
 ) -> None:
     if reference.tag != _dsig_tag("Reference") or reference.attrib != {"URI": uri}:
         _invalid(spec, f"{side} package manifest reference is invalid")
     children = list(reference)
-    if relationship_ids is None:
+    if relationship_selectors is None:
         if [child.tag for child in children] != [
             _dsig_tag("DigestMethod"),
             _dsig_tag("DigestValue"),
@@ -542,9 +554,10 @@ def _validate_package_manifest_reference(
         relationship_transform.attrib != {"Algorithm": _OPC_RELATIONSHIP_TRANSFORM_ALGORITHM}
         or canonicalization.attrib != {"Algorithm": _XML_C14N_ALGORITHM}
         or [child.tag for child in relationship_transform]
-        != [_opc_signature_tag("RelationshipReference")] * len(relationship_ids)
+        != [_opc_signature_tag(element_name) for element_name, _, _ in relationship_selectors]
         or [child.attrib for child in relationship_transform]
-        != [{"SourceId": relationship_id} for relationship_id in relationship_ids]
+        != [{attribute_name: value} for _, attribute_name, value in relationship_selectors]
+        or any(list(child) or (child.text or "").strip() for child in relationship_transform)
     ):
         _invalid(spec, f"{side} package manifest relationship selection is invalid")
     _validate_package_signature_digest(reference, spec, side)

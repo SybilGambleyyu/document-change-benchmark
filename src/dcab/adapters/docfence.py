@@ -570,6 +570,42 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
         )
         return observed, _evidence("content_control_lock_inventory_changed")
     if kind == "package_signature_coverage_changed":
+        source = fact.get("source")
+        if source == "opc_package_signature":
+            relationship_coverage_checks = (
+                _count_pair(
+                    report,
+                    "package_signature_coverage",
+                    "declared_covered_word_relationship_count",
+                    2,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "package_signature_coverage",
+                    "declared_uncovered_word_relationship_count",
+                    0,
+                    1,
+                ),
+            )
+        elif source == "opc_package_signature_relationship_type":
+            relationship_coverage_checks = (
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_covered_word_relationship_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "package_signature_coverage",
+                    "declared_uncovered_word_relationship_count",
+                    1,
+                ),
+            )
+        else:
+            return False, _evidence("package_signature_coverage_changed")
+
         observed = _has_changes(report, "package_signature_coverage_changed") and all(
             (
                 _same_count(
@@ -596,20 +632,7 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
                     "declared_uncovered_word_part_count",
                     0,
                 ),
-                _count_pair(
-                    report,
-                    "package_signature_coverage",
-                    "declared_covered_word_relationship_count",
-                    2,
-                    1,
-                ),
-                _count_pair(
-                    report,
-                    "package_signature_coverage",
-                    "declared_uncovered_word_relationship_count",
-                    0,
-                    1,
-                ),
+                *relationship_coverage_checks,
                 _same_count(
                     report,
                     "package_signature_coverage",
