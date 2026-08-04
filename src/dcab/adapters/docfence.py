@@ -434,6 +434,38 @@ def _fact_observed(report: dict[str, Any], fact: dict[str, Any]) -> tuple[bool, 
             )
         )
         return observed, _evidence("field_update_on_open_inventory_changed")
+    if kind == "template_style_update_on_open_enabled":
+        observed = _has_changes(report, "template_style_update_on_open_inventory_changed") and all(
+            (
+                _count_pair(
+                    report,
+                    "template_style_updates_on_open",
+                    "template_style_update_on_open_enabled_setting_count",
+                    0,
+                    1,
+                ),
+                _count_pair(
+                    report,
+                    "template_style_updates_on_open",
+                    "template_style_update_on_open_disabled_setting_count",
+                    1,
+                    0,
+                ),
+                _same_count(
+                    report,
+                    "external_document_dependencies",
+                    "attached_template_anchor_count",
+                    1,
+                ),
+                _same_count(
+                    report,
+                    "external_document_dependencies",
+                    "attached_template_relationship_count",
+                    1,
+                ),
+            )
+        )
+        return observed, _evidence("template_style_update_on_open_inventory_changed")
     if kind == "drawing_linked_picture_target_changed":
         observed = (
             _has_changes(

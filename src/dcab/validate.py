@@ -1125,6 +1125,9 @@ def _validate_settings(
     field_recalculations_on_open = [
         element for element in root if element.tag == _word_tag("updateFields")
     ]
+    template_style_updates_on_open = [
+        element for element in root if element.tag == _word_tag("linkStyles")
+    ]
     attached_custom_xml_schemas = [
         element for element in root if element.tag == _word_tag("attachedSchema")
     ]
@@ -1154,6 +1157,10 @@ def _validate_settings(
         _invalid(spec, f"{side} attached custom XML schema setting is invalid")
     if len(field_recalculations_on_open) != int(variant.field_recalculation_on_open is not None):
         _invalid(spec, f"{side} field-recalculation-on-open setting is invalid")
+    if len(template_style_updates_on_open) != int(
+        variant.template_style_update_on_open is not None
+    ):
+        _invalid(spec, f"{side} template-style-update-on-open setting is invalid")
     if len(document_variable_containers) != int(variant.document_variable_value is not None):
         _invalid(spec, f"{side} document-variable setting is invalid")
     if attached_custom_xml_schemas:
@@ -1176,6 +1183,16 @@ def _validate_settings(
             or (field_recalculation.tail or "").strip()
         ):
             _invalid(spec, f"{side} field-recalculation-on-open setting is invalid")
+    if template_style_updates_on_open:
+        template_style_update = template_style_updates_on_open[0]
+        expected_value = "true" if variant.template_style_update_on_open else "false"
+        if (
+            template_style_update.attrib != {_word_tag("val"): expected_value}
+            or list(template_style_update)
+            or (template_style_update.text or "").strip()
+            or (template_style_update.tail or "").strip()
+        ):
+            _invalid(spec, f"{side} template-style-update-on-open setting is invalid")
     if document_variable_containers:
         container = document_variable_containers[0]
         if len(container) != 1 or (container.text or "").strip():
